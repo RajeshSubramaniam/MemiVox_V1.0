@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MyScorer Admin Portal</title>
+    <style>
+        :root { color-scheme: dark; }
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg,#07111f,#111827); color:#eff6ff; margin:0; padding:24px; }
+        .wrap { max-width: 1300px; margin:0 auto; }
+        .card { background: rgba(15,23,42,0.95); border:1px solid #1f2937; border-radius:18px; padding:20px; box-shadow: 0 12px 30px rgba(15,23,42,0.45); }
+        h1 { margin-top:0; font-size: 30px; }
+        p { color:#cbd5e1; }
+        .tabs { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+        .tab { background:#111827; border:1px solid #334155; border-radius:10px; color:#eff6ff; padding:10px 12px; cursor:pointer; }
+        .tab.active { background: linear-gradient(135deg,#2563eb,#22d3ee); color:#fff; border-color:#38bdf8; }
+        .panel { display:none; }
+        .panel.active { display:block; }
+        .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap:12px; }
+        label { display:block; font-size:13px; color:#bfdbfe; margin-bottom:6px; }
+        input, select, textarea { width:100%; box-sizing:border-box; border-radius:10px; border:1px solid #334155; background:#0b1220; color:#eff6ff; padding:10px; font-size:14px; }
+        button { background: linear-gradient(135deg,#2563eb,#22d3ee); color:white; border:none; border-radius:10px; padding:10px 12px; cursor:pointer; font-weight:700; }
+        button:hover { filter:brightness(1.05); }
+        .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        table { width:100%; border-collapse:collapse; margin-top:10px; overflow:hidden; border-radius:10px; }
+        th, td { padding:10px; border-bottom:1px solid #1f2937; text-align:left; font-size:13px; }
+        th { background:#111827; color:#bfdbfe; }
+        tr:hover { background:#172235; cursor:pointer; }
+        .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#16324a; color:#bfdbfe; font-size:12px; }
+        .muted { color:#93c5fd; font-size:12px; }
+        .status { margin-top:10px; color:#bfdbfe; font-size:13px; }
+        .detailBox { background:#0b1220; border:1px solid #1f2937; border-radius:12px; padding:12px; margin-top:12px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+  <!-- Admin Password Gate -->
+  <div id="adminGate" class="card" style="max-width:420px;margin:80px auto;">
+    <h1 style="font-size:22px;text-align:center;">Admin Portal</h1>
+    <p style="text-align:center;font-size:13px;">Enter admin password to continue.</p>
+    <label for="adminPwdInput">Password</label>
+    <input id="adminPwdInput" type="password" placeholder="Admin password" autocomplete="current-password" />
+    <div style="margin-top:12px;text-align:center;">
+      <button id="adminLoginBtn">Sign In</button>
+    </div>
+    <div id="adminAccessStatus" class="status" style="text-align:center;"></div>
+  </div>
+
+  <!-- Main Admin Panel (hidden until auth) -->
+  <div id="adminPanel" class="card" style="display:none;">
+    <h1>MyScorer Admin Portal</h1>
+    <p>Manage setups, clients, match history and new setup registration from one place.</p>
+
+    <div class="tabs">
+      <button class="tab active" data-target="setupPanel">Setup Details</button>
+      <button class="tab" data-target="clientPanel">Client Details</button>
+      <button class="tab" data-target="matchPanel">Match Details</button>
+      <button class="tab" data-target="registerPanel">New Setup Registration</button>
+      <button class="tab" data-target="settingsPanel">Settings</button>
+    </div>
+
+    <div id="setupPanel" class="panel active">
+      <div class="grid">
+        <div><label>Filter by Setup ID / Owner</label><input id="setupFilter" placeholder="e.g. 23082201 or Alex" /></div>
+      </div>
+      <div class="row" style="margin-top:10px;"><button id="loadSetupsBtn">Load Setups</button></div>
+      <table>
+        <thead><tr><th>Setup ID</th><th>Start Date</th><th>Owner Name</th><th>Owner Email</th><th>Camera Serial</th><th>YoLo Serial</th><th>Power Bank</th><th>Status</th></tr></thead>
+        <tbody id="setupTable"></tbody>
+      </table>
+      <div id="setupDetail" class="detailBox">Select a setup row to view details.</div>
+    </div>
+
+    <div id="clientPanel" class="panel">
+      <div class="grid">
+        <div><label>Filter by Client / Setup ID</label><input id="clientFilter" placeholder="e.g. Alex or 23082201" /></div>
+      </div>
+      <div class="row" style="margin-top:10px;"><button id="loadClientsBtn">Load Clients</button></div>
+      <table>
+        <thead><tr><th>Name</th><th>Email ID</th><th>Setup ID</th><th>Start Date</th><th>Status</th><th>Password</th></tr></thead>
+        <tbody id="clientTable"></tbody>
+      </table>
+      <div id="clientDetail" class="detailBox">Select a client row to edit email/password.</div>
+    </div>
+
+    <div id="matchPanel" class="panel">
+      <div class="detailBox">
+        <h3 style="margin-top:0;">Match Registration</h3>
+        <p class="muted">Use this area to save the active match URL for a setup and keep the history in one place.</p>
+        <div class="grid">
+          <div><label>Setup ID</label><input id="matchUrlSetupId" value="23082201" /></div>
+          <div><label>Provider</label><select id="matchProviderInput"><option value="PlayHQ">PlayHQ</option><option value="Cricheroes">Cricheroes</option><option value="Manual">Manual</option></select></div>
+          <div><label>Match URL</label><input id="matchUrlInput" placeholder="https://playhq.com/..." /></div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button id="saveMatchUrlBtn">Save Match URL</button>
+        </div>
+        <div id="matchUrlStatusMessage" class="status">Ready.</div>
+      </div>
+
+      <div class="grid" style="margin-top:16px;">
+        <div><label>Setup ID for Match History</label><input id="matchSetupId" value="23082201" /></div>
+      </div>
+      <div class="row" style="margin-top:10px;"><button id="loadMatchesBtn">Load Match Details</button></div>
+      <table>
+        <thead><tr><th>Date</th><th>Provider</th><th>Match URL</th><th>Status</th></tr></thead>
+        <tbody id="matchTable"></tbody>
+      </table>
+    </div>
+
+    <div id="registerPanel" class="panel">
+      <div class="grid">
+        <div><label>Setup ID</label><input id="regSetupId" placeholder="Auto generated if blank" /></div>
+        <div><label>Start Date</label><input id="regStartDate" type="date" /></div>
+        <div><label>Owner Name</label><input id="regOwnerName" /></div>
+        <div><label>Owner Email</label><input id="regOwnerEmail" type="email" /></div>
+        <div><label>Camera Serial Number</label><input id="regCamera" /></div>
+        <div><label>Yolo Serial Number</label><input id="regYolo" /></div>
+        <div><label>Power Bank Serial Number</label><input id="regPower" /></div>
+        <div><label>Status</label><select id="regStatus"><option>Active</option><option>Inactive</option></select></div>
+        <div><label>Client Password <span style="color:#64748b;font-weight:400;">(optional)</span></label><input id="regPassword" type="password" placeholder="Leave blank for default" /></div>
+      </div>
+      <div class="row" style="margin-top:10px;"><button id="registerBtn">Register Setup</button></div>
+      <div id="registerStatus" class="status">Ready.</div>
+    </div>
+    <div id="settingsPanel" class="panel">
+      <h3 style="margin-top:0;">CricHeroes BuildId</h3>
+      <p class="muted">The CricHeroes scraper needs a valid Next.js buildId. It changes when CricHeroes deploys new code. If scores stop loading, update the buildId below.</p>
+
+      <div class="detailBox" id="buildIdStatusBox">
+        <div class="row" style="align-items:center;gap:12px;">
+          <span style="font-size:14px;">Current BuildId:</span>
+          <code id="currentBuildId" style="background:#172235;padding:6px 10px;border-radius:8px;font-family:monospace;font-size:13px;">Loading...</code>
+          <span id="buildIdIndicator" class="pill">Checking...</span>
+        </div>
+      </div>
+
+      <div class="detailBox" style="margin-top:12px;">
+        <h4 style="margin:0 0 8px;">Update BuildId</h4>
+        <div style="margin-bottom:12px;">
+          <button id="openCricHeroesBtn" style="background:#334155;">1. Open CricHeroes Page</button>
+          <span class="muted" style="margin-left:8px;">Opens in a new tab (browser passes Cloudflare)</span>
+        </div>
+        <div style="margin-bottom:12px;">
+          <p class="muted" style="margin:0 0 6px;">2. In the opened CricHeroes tab, press <strong>F12</strong> → Console tab → paste this and press Enter:</p>
+          <div style="position:relative;">
+            <code id="consoleSnippet" style="display:block;background:#0b1220;padding:10px;border-radius:8px;font-size:12px;word-break:break-all;cursor:pointer;border:1px solid #334155;">copy(JSON.parse(document.getElementById('__NEXT_DATA__').textContent).buildId)</code>
+            <button id="copySnippetBtn" style="position:absolute;top:6px;right:6px;padding:4px 10px;font-size:11px;background:#475569;">Copy</button>
+          </div>
+          <span class="muted">This copies the buildId to your clipboard.</span>
+        </div>
+        <div class="grid">
+          <div><label>3. Paste the BuildId here</label><input id="newBuildIdInput" placeholder="e.g. xoRGGzgTU9u3RczHQvDRQ" /></div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button id="testBuildIdBtn" style="background:#334155;">Test BuildId</button>
+          <button id="applyBuildIdBtn">Apply BuildId</button>
+        </div>
+        <div id="buildIdStatus" class="status">Ready.</div>
+      </div>
+    </div>
+
+  </div>  <!-- end adminPanel -->
+</div>
+
+<script>
+  // --- Admin Auth Gate ---
+  const adminPwdKey = 'adminAccess:pwd';
+  const adminGate = document.getElementById('adminGate');
+  const adminPanel = document.getElementById('adminPanel');
+  const adminAccessStatus = document.getElementById('adminAccessStatus');
+
+  function getAdminPwd() { return sessionStorage.getItem(adminPwdKey) || ''; }
+  function adminHeaders() { return { 'Content-Type': 'application/json', 'X-Admin-Password': getAdminPwd() }; }
+  function adminHeadersGet() { return { 'X-Admin-Password': getAdminPwd() }; }
+
+  async function adminLogin() {
+    const pwd = document.getElementById('adminPwdInput').value.trim();
+    if (!pwd) { adminAccessStatus.textContent = 'Enter password.'; adminAccessStatus.className = 'status'; return; }
+    adminAccessStatus.textContent = 'Verifying...';
+    try {
+      const res = await fetch('/api/admin/validate-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd })
+      });
+      const data = await res.json();
+      if (data.valid) {
+        sessionStorage.setItem(adminPwdKey, pwd);
+        adminGate.style.display = 'none';
+        adminPanel.style.display = 'block';
+        adminAccessStatus.textContent = '';
+        initAdmin();
+      } else {
+        adminAccessStatus.textContent = 'Invalid password.';
+        document.getElementById('adminPwdInput').value = '';
+      }
+    } catch { adminAccessStatus.textContent = 'Server unreachable.'; }
+  }
+
+  document.getElementById('adminLoginBtn').addEventListener('click', adminLogin);
+  document.getElementById('adminPwdInput').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+
+  // Auto-login if session still valid
+  if (getAdminPwd()) {
+    fetch('/api/admin/validate-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: getAdminPwd() })
+    }).then(r => r.json()).then(d => {
+      if (d.valid) { adminGate.style.display = 'none'; adminPanel.style.display = 'block'; initAdmin(); }
+      else { sessionStorage.removeItem(adminPwdKey); }
+    }).catch(() => {});
+  }
+  function initAdmin() {
+  const setupTable = document.getElementById('setupTable');
+  const clientTable = document.getElementById('clientTable');
+  const matchTable = document.getElementById('matchTable');
+  const setupDetail = document.getElementById('setupDetail');
+  const clientDetail = document.getElementById('clientDetail');
+  const registerStatus = document.getElementById('registerStatus');
+  const matchUrlStatusMessage = document.getElementById('matchUrlStatusMessage');
+
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.target).classList.add('active');
+    });
+  });
+
+  async function loadSetups() {
+    const query = document.getElementById('setupFilter').value;
+    const res = await fetch('/api/admin/setups?query=' + encodeURIComponent(query || ''), { headers: adminHeadersGet() });
+    const data = await res.json();
+    setupTable.innerHTML = data.map(item => `<tr data-type="setup" data-id="${item.setupId}">
+      <td>${item.setupId}</td>
+      <td>${new Date(item.startDate).toLocaleDateString()}</td>
+      <td>${item.ownerName}</td>
+      <td>${item.ownerEmail}</td>
+      <td>${item.cameraSerialNumber}</td>
+      <td>${item.yoloSerialNumber}</td>
+      <td>${item.powerBankSerialNumber}</td>
+      <td><span class="pill">${item.status}</span></td>
+    </tr>`).join('');
+    setupTable.querySelectorAll('tr').forEach(row => row.addEventListener('click', () => {
+      const setupId = row.dataset.id;
+      setupDetail.innerHTML = '<strong>Selected setup:</strong> ' + setupId + '<br/>' +
+        'Owner: ' + data.find(x => x.setupId === setupId).ownerName + '<br/>' +
+        'Email: ' + data.find(x => x.setupId === setupId).ownerEmail + '<br/>' +
+        'Camera: ' + data.find(x => x.setupId === setupId).cameraSerialNumber + '<br/>' +
+        'Yolo: ' + data.find(x => x.setupId === setupId).yoloSerialNumber + '<br/>' +
+        'Power Bank: ' + data.find(x => x.setupId === setupId).powerBankSerialNumber;
+    }));
+  }
+
+  async function loadClients() {
+    const query = document.getElementById('clientFilter').value;
+    const res = await fetch('/api/admin/clients?query=' + encodeURIComponent(query || ''), { headers: adminHeadersGet() });
+    const data = await res.json();
+    clientTable.innerHTML = data.map(item => `<tr data-type="client" data-id="${item.setupId}">
+      <td>${item.name}</td>
+      <td>${item.emailId}</td>
+      <td>${item.setupId}</td>
+      <td>${new Date(item.startDate).toLocaleDateString()}</td>
+      <td>${item.status}</td>
+      <td>••••••</td>
+    </tr>`).join('');
+    clientTable.querySelectorAll('tr').forEach(row => row.addEventListener('click', () => {
+      const setupId = row.dataset.id;
+      const item = data.find(x => x.setupId === setupId);
+      clientDetail.innerHTML = '<strong>Client:</strong> ' + item.name + '<br/>' +
+        'Setup ID: ' + item.setupId + '<br/>' +
+        'Current Email: ' + item.emailId + '<br/>' +
+        '<div style="margin-top:10px;">' +
+        '<label>New Email</label><input id="editEmail" value="' + item.emailId + '" />' +
+        '<label>New Password</label><input id="editPassword" type="password" placeholder="Leave blank to keep current" />' +
+        '<div class="row" style="margin-top:10px;"><button id="saveClientBtn">Save Client Changes</button></div>' +
+        '</div>';
+      document.getElementById('saveClientBtn').addEventListener('click', async () => {
+        const result = await fetch('/api/admin/clients/' + encodeURIComponent(setupId), {
+          method: 'POST',
+          headers: adminHeaders(),
+          body: JSON.stringify({ emailId: document.getElementById('editEmail').value, password: document.getElementById('editPassword').value })
+        });
+        const json = await result.json();
+        clientDetail.innerHTML = 'Updated: ' + JSON.stringify(json);
+      });
+    }));
+  }
+
+  async function saveMatchUrl() {
+    const setupId = document.getElementById('matchUrlSetupId').value.trim();
+    const providerType = document.getElementById('matchProviderInput').value;
+    const matchUrl = document.getElementById('matchUrlInput').value.trim();
+
+    if (!setupId || !matchUrl) {
+      matchUrlStatusMessage.textContent = 'Please enter both Setup ID and Match URL.';
+      return;
+    }
+
+    matchUrlStatusMessage.textContent = 'Saving match registration for ' + setupId + '...';
+    const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/matches', {
+      method: 'POST',
+      headers: adminHeaders(),
+      body: JSON.stringify({ providerType, matchUrl })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      matchUrlStatusMessage.textContent = data.message || 'Failed to save match registration.';
+      return;
+    }
+
+    matchUrlStatusMessage.textContent = 'Saved ' + (data.providerType || providerType) + ' match for Setup ID ' + (data.setupId || setupId) + '.';
+    document.getElementById('matchSetupId').value = setupId;
+    document.getElementById('matchUrlInput').value = '';
+    loadMatches();
+  }
+
+  async function loadMatches() {
+    const setupId = document.getElementById('matchSetupId').value || '23082201';
+    const res = await fetch('/api/admin/matches/' + encodeURIComponent(setupId), { headers: adminHeadersGet() });
+    const data = await res.json();
+    matchTable.innerHTML = data.map(item => `<tr>
+      <td>${new Date(item.date || item.createdAt).toLocaleDateString()}</td>
+      <td>${item.providerType || 'Legacy'}</td>
+      <td>${item.matchUrl}</td>
+      <td>${item.status === 'Active' ? '<span class="pill">Active</span>' : '<span class="pill">Completed</span>'}</td>
+    </tr>`).join('');
+  }
+
+  async function registerSetup() {
+    const payload = {
+      setupId: document.getElementById('regSetupId').value.trim(),
+      startDate: document.getElementById('regStartDate').value || new Date().toISOString().slice(0,10),
+      ownerName: document.getElementById('regOwnerName').value.trim(),
+      ownerEmail: document.getElementById('regOwnerEmail').value.trim(),
+      cameraSerialNumber: document.getElementById('regCamera').value.trim(),
+      yoloSerialNumber: document.getElementById('regYolo').value.trim(),
+      powerBankSerialNumber: document.getElementById('regPower').value.trim(),
+      status: document.getElementById('regStatus').value,
+      password: document.getElementById('regPassword').value
+    };
+
+    if (!payload.startDate || !payload.ownerName || !payload.ownerEmail ||
+        !payload.cameraSerialNumber || !payload.yoloSerialNumber || !payload.powerBankSerialNumber) {
+      registerStatus.textContent = 'All fields (except Setup ID and Password) are required.';
+      return;
+    }
+
+    const res = await fetch('/api/admin/setups', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(payload) });
+    const data = await res.json();
+    if (!res.ok) {
+      registerStatus.textContent = data.message || 'Registration failed.';
+      return;
+    }
+    registerStatus.textContent = 'Registered setup ' + data.setupId + ' successfully.' + (payload.password ? ' Password set.' : ' Default password: change-me');
+    document.getElementById('regSetupId').value = '';
+    document.getElementById('regOwnerName').value = '';
+    document.getElementById('regOwnerEmail').value = '';
+    document.getElementById('regCamera').value = '';
+    document.getElementById('regYolo').value = '';
+    document.getElementById('regPassword').value = '';
+    document.getElementById('regPower').value = '';
+  }
+
+  document.getElementById('loadSetupsBtn').addEventListener('click', loadSetups);
+  document.getElementById('loadClientsBtn').addEventListener('click', loadClients);
+  document.getElementById('saveMatchUrlBtn').addEventListener('click', saveMatchUrl);
+  document.getElementById('loadMatchesBtn').addEventListener('click', loadMatches);
+  document.getElementById('registerBtn').addEventListener('click', registerSetup);
+
+  // --- Settings: CricHeroes BuildId ---
+  const buildIdStatus = document.getElementById('buildIdStatus');
+  const currentBuildIdEl = document.getElementById('currentBuildId');
+  const buildIdIndicator = document.getElementById('buildIdIndicator');
+  const newBuildIdInput = document.getElementById('newBuildIdInput');
+
+  async function loadBuildId() {
+    try {
+      const res = await fetch('/api/admin/cricheroes-buildid', { headers: adminHeadersGet() });
+      const data = await res.json();
+      currentBuildIdEl.textContent = data.buildId || '(not set)';
+      // Test if it's still valid by hitting a known match's _next/data endpoint
+      checkBuildIdHealth(data.buildId);
+    } catch {
+      currentBuildIdEl.textContent = 'Error loading';
+      buildIdIndicator.textContent = 'Error';
+      buildIdIndicator.style.background = '#7f1d1d';
+    }
+  }
+
+  async function checkBuildIdHealth(buildId) {
+    if (!buildId) {
+      buildIdIndicator.textContent = 'Not Set';
+      buildIdIndicator.style.background = '#7f1d1d';
+      return;
+    }
+    try {
+      // Quick probe: fetch a known _next/data path to see if buildId returns 200 vs 404
+      const testUrl = '/api/admin/cricheroes-buildid/test?buildId=' + encodeURIComponent(buildId);
+      const res = await fetch(testUrl, { headers: adminHeadersGet() });
+      const data = await res.json();
+      if (data.valid) {
+        buildIdIndicator.textContent = 'Active';
+        buildIdIndicator.style.background = '#065f46';
+      } else {
+        buildIdIndicator.textContent = 'Stale';
+        buildIdIndicator.style.background = '#7f1d1d';
+      }
+    } catch {
+      buildIdIndicator.textContent = 'Unknown';
+      buildIdIndicator.style.background = '#78350f';
+    }
+  }
+
+  document.getElementById('openCricHeroesBtn').addEventListener('click', () => {
+    window.open('https://cricheroes.com/live-matches', '_blank');
+  });
+
+  document.getElementById('copySnippetBtn').addEventListener('click', () => {
+    const snippet = document.getElementById('consoleSnippet').textContent;
+    navigator.clipboard.writeText(snippet).then(() => {
+      document.getElementById('copySnippetBtn').textContent = 'Copied!';
+      setTimeout(() => document.getElementById('copySnippetBtn').textContent = 'Copy', 2000);
+    });
+  });
+
+  document.getElementById('testBuildIdBtn').addEventListener('click', async () => {
+    const buildId = newBuildIdInput.value.trim();
+    if (!buildId) { buildIdStatus.textContent = 'Enter a buildId first.'; return; }
+    buildIdStatus.textContent = 'Testing buildId...';
+    try {
+      const res = await fetch('/api/admin/cricheroes-buildid/test?buildId=' + encodeURIComponent(buildId), { headers: adminHeadersGet() });
+      const data = await res.json();
+      buildIdStatus.textContent = data.valid
+        ? 'BuildId is valid! Click "Apply BuildId" to save.'
+        : 'BuildId is invalid (returned ' + (data.status || 'error') + '). Check the value.';
+    } catch {
+      buildIdStatus.textContent = 'Test failed. Server may be unreachable.';
+    }
+  });
+
+  document.getElementById('applyBuildIdBtn').addEventListener('click', async () => {
+    const buildId = newBuildIdInput.value.trim();
+    if (!buildId) { buildIdStatus.textContent = 'Enter a buildId first.'; return; }
+    buildIdStatus.textContent = 'Applying...';
+    try {
+      const res = await fetch('/api/admin/cricheroes-buildid', {
+        method: 'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify({ buildId })
+      });
+      const data = await res.json();
+      buildIdStatus.textContent = 'Applied! Current buildId: ' + data.buildId;
+      currentBuildIdEl.textContent = data.buildId;
+      newBuildIdInput.value = '';
+      checkBuildIdHealth(data.buildId);
+    } catch {
+      buildIdStatus.textContent = 'Failed to apply buildId.';
+    }
+  });
+
+  loadSetups();
+  loadClients();
+  loadMatches();
+  loadBuildId();
+  } // end initAdmin
+</script>
+</body>
+</html>

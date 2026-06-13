@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MyScorer Setup Page</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg,#07111f,#111827); color:#eff6ff; min-height: 100vh; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+    .card { background: rgba(15,23,42,0.96); border: 1px solid #1f2937; border-radius: 18px; padding: 28px; box-shadow: 0 12px 30px rgba(15,23,42,0.45); }
+    h1 { margin: 0 0 4px 0; font-size: 26px; }
+    .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
+    label { display: block; font-size: 13px; color: #bfdbfe; margin-bottom: 5px; font-weight: 600; }
+    input { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid #334155; background: #0b1220; color: #eff6ff; padding: 10px 12px; font-size: 14px; transition: border-color 0.2s; }
+    input:focus { outline: none; border-color: #2563eb; }
+    input::placeholder { color: #475569; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; border: none; border-radius: 10px; padding: 10px 18px; cursor: pointer; font-weight: 700; font-size: 14px; transition: filter 0.15s, transform 0.1s; }
+    .btn:hover { filter: brightness(1.1); }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: linear-gradient(135deg,#2563eb,#22d3ee); color: #fff; }
+    .btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+    .btn-secondary:hover { color: #eff6ff; }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; }
+    .status { margin-top: 10px; font-size: 13px; min-height: 18px; }
+    .status.error { color: #f87171; }
+    .status.success { color: #4ade80; }
+    .status.info { color: #93c5fd; }
+    .box { margin-top: 18px; background: #0b1220; border: 1px solid #1f2937; border-radius: 12px; padding: 16px; }
+    .box-title { font-weight: 700; font-size: 15px; margin-bottom: 10px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 500px) { .grid2 { grid-template-columns: 1fr; } }
+    .btn-row { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    /* Match history table */
+    .history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .history-table th { text-align: left; color: #64748b; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #1f2937; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .history-table td { padding: 8px; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+    .history-table tr:last-child td { border-bottom: none; }
+    .history-table tr:hover td { background: rgba(37,99,235,0.06); }
+    .url-cell { max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .url-cell a { color: #93c5fd; text-decoration: none; }
+    .url-cell a:hover { text-decoration: underline; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+    .badge-active { background: rgba(34,211,238,0.15); color: #22d3ee; }
+    .badge-done { background: rgba(100,116,139,0.15); color: #64748b; }
+    .badge-provider { background: rgba(37,99,235,0.12); color: #60a5fa; }
+
+    /* Active match card */
+    .active-match { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .active-match .url-display { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .active-match .url-display a { color: #93c5fd; text-decoration: none; }
+    .active-match .url-display a:hover { text-decoration: underline; }
+    .no-match { color: #64748b; font-style: italic; }
+
+    /* Password enter on Enter key */
+    .input-group { position: relative; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1 id="pageTitle">Setup</h1>
+      <div class="subtitle">Enter your setup password to manage your match and overlay settings.</div>
+
+      <!-- Access Gate -->
+      <div id="accessGate" class="box">
+        <label for="passwordInput">Setup Password</label>
+        <input id="passwordInput" type="password" placeholder="Enter password" autocomplete="current-password" />
+        <div class="btn-row">
+          <button id="accessBtn" class="btn btn-primary" type="button">Unlock</button>
+          <button id="logoutBtn" class="btn btn-secondary" type="button" style="display:none;">Lock</button>
+        </div>
+        <div id="accessStatus" class="status info"></div>
+      </div>
+
+      <!-- Main Panel (hidden until authenticated) -->
+      <div id="mainPanel" hidden>
+
+        <!-- Register Match -->
+        <div class="box">
+          <div class="box-title">Register Match</div>
+          <label for="matchUrlInput">Match URL</label>
+          <input id="matchUrlInput" type="url" placeholder="Paste PlayHQ or CricHeroes match URL here" />
+          <div class="btn-row">
+            <button id="saveBtn" class="btn btn-primary">Register Match</button>
+          </div>
+          <div id="statusMessage" class="status"></div>
+        </div>
+
+        <!-- Active Match -->
+        <div class="box">
+          <div class="box-title">Active Match</div>
+          <div id="activeMatchBox" class="no-match">No active match registered.</div>
+        </div>
+
+        <!-- Overlay Link -->
+        <div class="box">
+          <div class="box-title">Overlay Link</div>
+          <div style="font-size: 13px; color: #94a3b8; margin-bottom: 8px;">Use this URL as a Browser Source in OBS or open in a browser:</div>
+          <input id="overlayUrl" readonly style="cursor:pointer; color:#93c5fd;" />
+          <div class="btn-row">
+            <button id="copyOverlayBtn" class="btn btn-secondary" type="button">Copy Link</button>
+          </div>
+        </div>
+
+        <!-- Match History -->
+        <div class="box">
+          <div class="box-title">Match History</div>
+          <div id="matchHistoryBox" style="color: #94a3b8; font-size: 13px;">Loading...</div>
+        </div>
+
+        <!-- Change Password -->
+        <div class="box">
+          <div class="box-title">Change Password</div>
+          <div class="grid2">
+            <div>
+              <label for="currentPwd">Current Password</label>
+              <input id="currentPwd" type="password" placeholder="Current password" autocomplete="current-password" />
+            </div>
+            <div>
+              <label for="newPwd">New Password</label>
+              <input id="newPwd" type="password" placeholder="New password (min 4 chars)" autocomplete="new-password" />
+            </div>
+          </div>
+          <div style="margin-top: 10px;">
+            <label for="confirmPwd">Confirm New Password</label>
+            <input id="confirmPwd" type="password" placeholder="Re-enter new password" autocomplete="new-password" />
+          </div>
+          <div class="btn-row">
+            <button id="changePwdBtn" class="btn btn-secondary" type="button">Update Password</button>
+          </div>
+          <div id="changePwdStatus" class="status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const rawPath = window.location.pathname.replace(/^\/+|\/+$/g, '');
+    const pathSegments = rawPath.split('/').filter(s => s.length > 0);
+    const setupId = (pathSegments.length === 1) ? pathSegments[0] : 'UNKNOWN';
+    document.getElementById('pageTitle').textContent = 'Setup ' + setupId;
+
+    const overlayUrl = window.location.origin + '/' + setupId + '/live';
+    document.getElementById('overlayUrl').value = overlayUrl;
+
+    const statusMessage = document.getElementById('statusMessage');
+    const accessStatus = document.getElementById('accessStatus');
+    const activeMatchBox = document.getElementById('activeMatchBox');
+    const mainPanel = document.getElementById('mainPanel');
+    const accessGate = document.getElementById('accessGate');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const accessKey = 'setupAccess:' + setupId;
+    const pwdKey = 'setupPwd:' + setupId;
+
+    function setStatus(el, text, type) {
+      el.textContent = text;
+      el.className = 'status ' + (type || 'info');
+    }
+
+    function detectProvider(url) {
+      if (!url) return '';
+      const lower = url.toLowerCase();
+      if (lower.includes('playhq.com')) return 'PlayHQ';
+      if (lower.includes('cricheroes.com') || lower.includes('cricheroes.in')) return 'Cricheroes';
+      return '';
+    }
+
+    function isValidMatchUrl(url) {
+      if (!url) return { valid: false, msg: 'Please paste a match URL.' };
+      try { new URL(url); } catch { return { valid: false, msg: 'Please enter a valid URL starting with https://' }; }
+      if (!url.startsWith('https://') && !url.startsWith('http://'))
+        return { valid: false, msg: 'URL must start with https://' };
+      const provider = detectProvider(url);
+      if (!provider)
+        return { valid: false, msg: 'URL must be from PlayHQ (playhq.com) or CricHeroes (cricheroes.com).' };
+      return { valid: true, provider };
+    }
+
+    function shortenUrl(url) {
+      try {
+        const u = new URL(url);
+        const path = u.pathname.length > 50 ? u.pathname.substring(0, 47) + '...' : u.pathname;
+        return u.hostname + path;
+      } catch { return url.length > 60 ? url.substring(0, 57) + '...' : url; }
+    }
+
+    function showMainPanel() {
+      mainPanel.hidden = false;
+      accessGate.style.display = 'none';
+      logoutBtn.style.display = 'inline-flex';
+    }
+
+    function hideMainPanel() {
+      mainPanel.hidden = true;
+      accessGate.style.display = 'block';
+      logoutBtn.style.display = 'none';
+    }
+
+    function isAccessGranted() {
+      return sessionStorage.getItem(accessKey) === 'true' && !!sessionStorage.getItem(pwdKey);
+    }
+
+    function authHeaders() {
+      return { 'Content-Type': 'application/json', 'X-Setup-Password': sessionStorage.getItem(pwdKey) || '' };
+    }
+
+    async function validatePassword() {
+      const password = document.getElementById('passwordInput').value.trim();
+      if (!password) { setStatus(accessStatus, 'Please enter the setup password.', 'error'); return; }
+
+      setStatus(accessStatus, 'Verifying...', 'info');
+      try {
+        const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/validate-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+
+        if (res.status === 429) {
+          setStatus(accessStatus, data.message || 'Too many attempts. Please wait.', 'error');
+          document.getElementById('passwordInput').value = '';
+          return;
+        }
+
+        if (!res.ok || !data.valid) {
+          setStatus(accessStatus, 'Invalid password. Please try again.', 'error');
+          document.getElementById('passwordInput').value = '';
+          return;
+        }
+
+        sessionStorage.setItem(accessKey, 'true');
+        sessionStorage.setItem(pwdKey, password);
+        setStatus(accessStatus, '', 'info');
+        showMainPanel();
+        refreshActiveMatch();
+        loadMatchHistory();
+      } catch {
+        setStatus(accessStatus, 'Unable to reach server. Try again.', 'error');
+      }
+    }
+
+    async function refreshActiveMatch() {
+      try {
+        const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/active-match', {
+          headers: { 'X-Setup-Password': sessionStorage.getItem(pwdKey) || '' }
+        });
+        const data = await res.json();
+        if (data && data.matchUrl) {
+          activeMatchBox.className = 'active-match';
+          activeMatchBox.innerHTML =
+            '<span class="badge badge-active">LIVE</span>' +
+            '<span class="badge badge-provider">' + (data.provider || data.providerType || '?') + '</span>' +
+            '<span class="url-display" title="' + data.matchUrl.replace(/"/g, '&quot;') + '">' +
+              '<a href="' + data.matchUrl + '" target="_blank" rel="noopener">' + shortenUrl(data.matchUrl) + '</a>' +
+            '</span>';
+        } else {
+          activeMatchBox.className = 'no-match';
+          activeMatchBox.textContent = 'No active match registered.';
+        }
+      } catch {
+        activeMatchBox.className = 'no-match';
+        activeMatchBox.textContent = 'Unable to load active match.';
+      }
+    }
+
+    async function loadMatchHistory() {
+      const box = document.getElementById('matchHistoryBox');
+      try {
+        const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/matches', {
+          headers: { 'X-Setup-Password': sessionStorage.getItem(pwdKey) || '' }
+        });
+        const matches = await res.json();
+        if (!matches || matches.length === 0) {
+          box.textContent = 'No matches yet.';
+          return;
+        }
+        const rows = matches.map(m => {
+          const statusBadge = m.isActive
+            ? '<span class="badge badge-active">Active</span>'
+            : '<span class="badge badge-done">Done</span>';
+          const providerBadge = '<span class="badge badge-provider">' + (m.providerType || 'Manual') + '</span>';
+          const date = new Date(m.createdAt).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+          return '<tr>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td>' + providerBadge + '</td>' +
+            '<td class="url-cell" title="' + m.matchUrl.replace(/"/g, '&quot;') + '"><a href="' + m.matchUrl + '" target="_blank" rel="noopener">' + shortenUrl(m.matchUrl) + '</a></td>' +
+            '<td style="color:#64748b;white-space:nowrap;">' + date + '</td>' +
+          '</tr>';
+        }).join('');
+        box.innerHTML = '<table class="history-table"><thead><tr><th>Status</th><th>Provider</th><th>Match</th><th>Date</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      } catch {
+        box.textContent = 'Unable to load match history.';
+      }
+    }
+
+    async function saveMatch() {
+      const matchUrl = document.getElementById('matchUrlInput').value.trim();
+      const check = isValidMatchUrl(matchUrl);
+      if (!check.valid) { setStatus(statusMessage, check.msg, 'error'); return; }
+
+      setStatus(statusMessage, 'Registering ' + check.provider + ' match...', 'info');
+      try {
+        const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/matches', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ providerType: check.provider, matchUrl })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setStatus(statusMessage, data.message || 'Failed to register match.', 'error');
+          return;
+        }
+
+        setStatus(statusMessage, 'Match registered successfully.', 'success');
+        document.getElementById('matchUrlInput').value = '';
+        refreshActiveMatch();
+        loadMatchHistory();
+      } catch {
+        setStatus(statusMessage, 'Unable to reach server. Try again.', 'error');
+      }
+    }
+
+    // Event listeners
+    document.getElementById('accessBtn').addEventListener('click', validatePassword);
+    document.getElementById('passwordInput').addEventListener('keydown', e => { if (e.key === 'Enter') validatePassword(); });
+    document.getElementById('matchUrlInput').addEventListener('keydown', e => { if (e.key === 'Enter') saveMatch(); });
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      sessionStorage.removeItem(accessKey);
+      sessionStorage.removeItem(pwdKey);
+      hideMainPanel();
+      setStatus(accessStatus, 'Session locked. Enter password to continue.', 'info');
+      document.getElementById('passwordInput').value = '';
+    });
+    document.getElementById('saveBtn').addEventListener('click', saveMatch);
+    document.getElementById('copyOverlayBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(overlayUrl).then(() => {
+        document.getElementById('copyOverlayBtn').textContent = 'Copied!';
+        setTimeout(() => { document.getElementById('copyOverlayBtn').textContent = 'Copy Link'; }, 2000);
+      });
+    });
+    document.getElementById('changePwdBtn').addEventListener('click', async () => {
+      const current = document.getElementById('currentPwd').value.trim();
+      const newPwd = document.getElementById('newPwd').value.trim();
+      const confirm = document.getElementById('confirmPwd').value.trim();
+      const changePwdStatus = document.getElementById('changePwdStatus');
+
+      if (!current || !newPwd) { setStatus(changePwdStatus, 'Please fill in both fields.', 'error'); return; }
+      if (newPwd.length < 4) { setStatus(changePwdStatus, 'New password must be at least 4 characters.', 'error'); return; }
+      if (newPwd !== confirm) { setStatus(changePwdStatus, 'Passwords do not match.', 'error'); return; }
+
+      setStatus(changePwdStatus, 'Updating password...', 'info');
+      try {
+        const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword: current, newPassword: newPwd })
+        });
+        const data = await res.json();
+
+        if (!res.ok) { setStatus(changePwdStatus, data.message || 'Failed to change password.', 'error'); return; }
+
+        setStatus(changePwdStatus, 'Password updated successfully.', 'success');
+        document.getElementById('currentPwd').value = '';
+        document.getElementById('newPwd').value = '';
+        document.getElementById('confirmPwd').value = '';
+      } catch {
+        setStatus(changePwdStatus, 'Unable to reach server.', 'error');
+      }
+    });
+
+    // Init
+    if (isAccessGranted()) {
+      showMainPanel();
+      refreshActiveMatch();
+      loadMatchHistory();
+    } else {
+      hideMainPanel();
+    }
+  </script>
+</body>
+</html>

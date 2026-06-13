@@ -1,0 +1,15 @@
+@MyScorer.Api_HostAddress = http://localhost:5201
+
+### Test PlayHQ scraper (1-day completed match)
+GET {{MyScorer.Api_HostAddress}}/api/match/test-extract?matchUrl=https%3A%2F%2Fwww.playhq.com%2Fcricket-australia%2Forg%2Fblacktown-city-and-district-cricket-association%2Fbcdca-red-ball-winter-cricket-winter-2025%2Fsunday-grade-1%2Fgame-centre%2Fbf90b123
+Accept: application/json
+
+### Test PlayHQ scraper (2-day completed match)
+GET {{MyScorer.Api_HostAddress}}/api/match/test-extract?matchUrl=https%3A%2F%2Fwww.playhq.com%2Fcricket-australia%2Forg%2Fparramatta-district-cricket-association%2Fpdca-senior-competition-summer-202526%2Fsenior-b06%2Fgame-centre%2F43eaddf7
+Accept: application/json
+
+### Test PlayHQ scraper (upcoming match)
+GET {{MyScorer.Api_HostAddress}}/api/match/test-extract?matchUrl=https%3A%2F%2Fwww.playhq.com%2Fcricket-australia%2Forg%2Fnepean-district-cricket-association%2Fndca-winter-cricket-competition-seniors-winter-2026%2Fjames-s-mason-oam-trophy%2Fgame-centre%2F4f233c69
+Accept: application/json
+
+###

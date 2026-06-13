@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>MyScorer Live</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { background: transparent !important; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; width: 100vw; height: 100vh; }
+
+        .overlay-anchor {
+            position: fixed;
+            bottom: 40px;
+            left: 40px;
+            /* no right/top — scoreboard sizes to its content */
+        }
+
+        .scoreboard {
+            display: inline-block;
+            white-space: nowrap;
+            background: linear-gradient(180deg, rgba(10,18,36,0.92), rgba(8,14,28,0.96));
+            border: 1px solid rgba(56,189,248,0.35);
+            border-radius: 8px;
+            padding: 8px 20px;
+            color: #eff6ff;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+        }
+
+        /* Row 1: Team scores, batting score, status */
+        .row1 {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            height: 32px;
+        }
+        .team-score-block {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+        .batting-team { font-size: 15px; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
+        .score-big { font-size: 24px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+        .overs { font-size: 12px; color: #94a3b8; }
+        .vs { font-size: 11px; color: #475569; margin: 0 2px; }
+        .other-team { font-size: 12px; color: #64748b; white-space: nowrap; }
+        .other-summary { font-size: 12px; color: #94a3b8; font-weight: 600; margin-left: 4px; }
+
+        .sep { width: 1px; height: 20px; background: rgba(148,163,184,0.2); flex-shrink: 0; }
+
+        .target-info { font-size: 12px; color: #facc15; font-weight: 600; white-space: nowrap; }
+        .summary-info { font-size: 12px; color: #38bdf8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .status-pill {
+            font-size: 9px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #16a34a;
+            color: #fff;
+            font-weight: 700;
+            text-transform: uppercase;
+            white-space: nowrap;
+            margin-left: auto;
+            flex-shrink: 0;
+        }
+        .status-pill.completed { background: #64748b; }
+
+        /* Row 2: Batsmen, Bowler, RR, Partnership, Projected */
+        .row2 {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            height: 26px;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+        .player-info { white-space: nowrap; }
+        .player-name { color: #cbd5e1; font-weight: 600; }
+        .player-stat { color: #93c5fd; font-weight: 700; margin-left: 2px; }
+        .lbl { color: #475569; }
+        .val { color: #cbd5e1; font-weight: 600; }
+        .val-highlight { color: #facc15; font-weight: 600; }
+
+        .toss-text { font-size: 10px; color: #475569; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+
+        .waiting {
+            /* Hidden in OBS overlay — no visible text on transparent canvas */
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="overlay-anchor">
+
+<div id="scoreboard" class="scoreboard" style="display:none;">
+    <!-- Row 1: Score -->
+    <div class="row1">
+        <div class="team-score-block">
+            <span class="batting-team" id="battingTeam"></span>
+            <span class="other-summary" id="prevInnings" style="display:none;"></span>
+            <span class="score-big" id="scoreBig"></span>
+            <span class="overs" id="oversLabel"></span>
+        </div>
+        <span class="vs">vs</span>
+        <span class="other-team" id="otherTeam"></span>
+        <span class="other-summary" id="otherSummary"></span>
+
+        <span class="sep" id="sepTarget" style="display:none;"></span>
+        <span class="target-info" id="targetInfo" style="display:none;"></span>
+
+        <span class="sep" id="sepSummary" style="display:none;"></span>
+        <span class="summary-info" id="summaryInfo" style="display:none;"></span>
+
+        <span class="status-pill" id="statusPill">LIVE</span>
+    </div>
+
+    <!-- Row 2: Details -->
+    <div class="row2">
+        <span class="player-info" id="bat1Block">
+            <span class="lbl">🏏 </span><span class="player-name" id="bat1Name"></span>
+            <span class="player-stat" id="bat1Runs"></span>
+        </span>
+        <span class="player-info" id="bat2Block">
+            <span class="player-name" id="bat2Name"></span>
+            <span class="player-stat" id="bat2Runs"></span>
+        </span>
+
+        <span class="sep"></span>
+
+        <span class="player-info" id="bowlBlock">
+            <span class="lbl">⚾ </span><span class="player-name" id="bowlName"></span>
+            <span class="player-stat" id="bowlFigures"></span>
+        </span>
+
+        <span class="sep"></span>
+
+        <span id="rrBlock">
+            <span class="lbl">RR </span><span class="val" id="runRate"></span>
+        </span>
+        <span id="rrrBlock" style="display:none;">
+            <span class="lbl">RRR </span><span class="val-highlight" id="reqRunRate"></span>
+        </span>
+
+        <span id="partBlock" style="display:none;">
+            <span class="sep"></span>
+            <span class="lbl">P'ship </span><span class="val" id="partnership"></span>
+        </span>
+        <span id="projBlock" style="display:none;">
+            <span class="lbl">Proj </span><span class="val" id="projected"></span>
+        </span>
+
+        <span class="toss-text" id="tossText"></span>
+    </div>
+</div>
+
+<div id="waitingMsg" class="waiting">Waiting for match data…</div>
+
+</div>
+
+<script>
+    const pathParts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/');
+    const setupId = pathParts[0] || new URLSearchParams(window.location.search).get('setupId') || 'UNKNOWN';
+
+    const scoreboard = document.getElementById('scoreboard');
+    const waitingMsg = document.getElementById('waitingMsg');
+
+    async function poll() {
+        try {
+            const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/live-score');
+            if (!res.ok) { showWaiting('Setup not found'); return; }
+            const d = await res.json();
+
+            if (!d.isValid && d.matchStatus === 'NoMatch') {
+                showWaiting('No active match for ' + setupId);
+                return;
+            }
+            if (!d.isValid && d.errorMessage) {
+                showWaiting(d.errorMessage);
+                return;
+            }
+
+            const isScheduled = d.matchStatus && d.matchStatus.toLowerCase() === 'scheduled';
+            if (isScheduled) {
+                const teams = [d.teamA, d.teamB].filter(Boolean).join(' vs ');
+                showWaiting(teams ? teams + ' — Match starts soon' : 'Match starts soon');
+                return;
+            }
+
+            scoreboard.style.display = 'block';
+            waitingMsg.style.display = 'none';
+
+            const isCompleted = d.matchStatus && d.matchStatus.toLowerCase() === 'completed';
+
+            // Row 1: Score
+            document.getElementById('battingTeam').textContent = d.battingTeam || d.teamA || '';
+            document.getElementById('scoreBig').textContent = d.runs + '/' + d.wickets;
+            document.getElementById('oversLabel').textContent = d.overs ? '(' + d.overs + ' ov)' : '';
+
+            // Previous innings for batting team (multi-innings matches)
+            const battingSummary = d.battingTeam === d.teamA ? d.teamASummary : d.teamBSummary;
+            const prevInningsEl = document.getElementById('prevInnings');
+            if (battingSummary && battingSummary.includes('&')) {
+                // Extract all innings except the last one (current innings is shown in scoreBig)
+                const parts = battingSummary.split('&').map(s => s.trim());
+                parts.pop(); // remove current innings
+                prevInningsEl.textContent = parts.join(' & ') + ' &';
+                prevInningsEl.style.display = '';
+            } else {
+                prevInningsEl.style.display = 'none';
+            }
+
+            // Other team
+            const otherTeam = d.battingTeam === d.teamA ? d.teamB : d.teamA;
+            const otherSummary = d.battingTeam === d.teamA ? d.teamBSummary : d.teamASummary;
+            document.getElementById('otherTeam').textContent = otherTeam || '';
+            document.getElementById('otherSummary').textContent = otherSummary && otherSummary !== 'Yet to bat' ? otherSummary : (otherSummary || '');
+
+            // Status pill
+            const pill = document.getElementById('statusPill');
+            pill.textContent = isCompleted ? 'COMPLETED' : (d.matchStatus || 'LIVE');
+            pill.className = 'status-pill' + (isCompleted ? ' completed' : '');
+
+            // Target
+            toggle('sepTarget', !isCompleted && !!d.target);
+            toggle('targetInfo', !isCompleted && !!d.target);
+            if (d.target) document.getElementById('targetInfo').textContent = 'Target: ' + d.target;
+
+            // Summary (e.g. "Need 59 runs in 34 balls" or "Team A won by X runs")
+            const hasSummary = d.matchSummary && !d.matchSummary.startsWith('Toss');
+            toggle('sepSummary', hasSummary);
+            toggle('summaryInfo', hasSummary);
+            if (hasSummary) document.getElementById('summaryInfo').textContent = d.matchSummary;
+
+            // Row 2: Live details (hide when completed — no active batsmen/bowler)
+            const row2 = document.querySelector('.row2');
+            if (isCompleted) {
+                row2.style.display = 'none';
+            } else {
+                row2.style.display = '';
+
+                // Batsmen
+                const hasBat1 = !!d.batsmanOnStrike;
+                const hasBat2 = !!d.batsmanNonStrike;
+                toggle('bat1Block', hasBat1);
+                toggle('bat2Block', hasBat2);
+                if (hasBat1) {
+                    document.getElementById('bat1Name').textContent = shorten(d.batsmanOnStrike) + '*';
+                    document.getElementById('bat1Runs').textContent = d.batsmanOnStrikeRuns || '';
+                }
+                if (hasBat2) {
+                    document.getElementById('bat2Name').textContent = shorten(d.batsmanNonStrike);
+                    document.getElementById('bat2Runs').textContent = d.batsmanNonStrikeRuns || '';
+                }
+
+                // Bowler
+                toggle('bowlBlock', !!d.currentBowler);
+                if (d.currentBowler) {
+                    document.getElementById('bowlName').textContent = shorten(d.currentBowler);
+                    document.getElementById('bowlFigures').textContent = d.currentBowlerFigures || '';
+                }
+
+                // Rates
+                toggle('rrBlock', !!d.runRate);
+                document.getElementById('runRate').textContent = d.runRate || '';
+                toggle('rrrBlock', !!d.requiredRunRate);
+                document.getElementById('reqRunRate').textContent = d.requiredRunRate || '';
+
+                // Partnership + Projected
+                toggle('partBlock', !!d.currentPartnership);
+                document.getElementById('partnership').textContent = d.currentPartnership || '';
+                toggle('projBlock', d.projectedScore > 0);
+                document.getElementById('projected').textContent = d.projectedScore || '';
+
+                // Toss
+                document.getElementById('tossText').textContent = d.tossResult || '';
+            }
+
+        } catch (e) {
+            showWaiting('Unable to reach server');
+        }
+    }
+
+    function toggle(id, show) {
+        document.getElementById(id).style.display = show ? '' : 'none';
+    }
+
+    function shorten(name) {
+        if (!name || name.length <= 12) return name || '';
+        const parts = name.trim().split(/\s+/);
+        if (parts.length <= 1) return name.substring(0, 12);
+        return parts[0][0] + '. ' + parts.slice(1).join(' ');
+    }
+
+    function showWaiting(text) {
+        scoreboard.style.display = 'none';
+        waitingMsg.style.display = 'block';
+        waitingMsg.textContent = text;
+    }
+
+    poll();
+    const _pollTimer = setInterval(poll, 8000);
+    // Cleanup on page unload (kiosk/OBS may reload)
+    window.addEventListener('beforeunload', () => clearInterval(_pollTimer));
+</script>
+</body>
+</html>

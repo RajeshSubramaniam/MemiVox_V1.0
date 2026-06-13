@@ -1,0 +1,40 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+publish/
+
+# .NET
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# NuGet
+**/packages/
+*.nupkg
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vs/
+.vscode/
+*.swp
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Dev/test artifacts
+test-query.json
+test-resp.json
+_pw_install/
+install-pw.csx

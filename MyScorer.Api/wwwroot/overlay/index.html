@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>MyScorer Overlay</title>
+</head>
+<body>
+<script>
+    // Redirect to the new live scoreboard overlay
+    const params = new URLSearchParams(window.location.search);
+    const setupId = params.get('setupId') || '23082201';
+    window.location.replace('/' + encodeURIComponent(setupId) + '/live');
+</script>
+</body>
+</html>
