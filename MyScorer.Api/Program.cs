@@ -56,6 +56,13 @@ app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value ?? string.Empty;
 
+    // Redirect /cheesecake/admin (no trailing slash) so UseDefaultFiles finds index.html
+    if (path.Equals("/cheesecake/admin", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.Redirect("/cheesecake/admin/", permanent: false);
+        return;
+    }
+    
     if (path == "/" ||
         path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/cheesecake/admin", StringComparison.OrdinalIgnoreCase) ||
