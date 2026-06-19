@@ -175,8 +175,23 @@ public class CricHeroesScraper : IProviderScraper
                 }
             }
 
-            // All strategies failed — try full discovery as last resort
-            buildId = await DiscoverBuildId(matchUrl, httpClient);
+            // Strategy: probe with a deliberate fake buildId.
+            // Next.js always returns a 404 HTML page that embeds __NEXT_DATA__ containing the
+            // real buildId — this is framework behaviour, not CricHeroes app logic, so it tends
+            // to bypass Cloudflare bot protection which targets normal browser page visits.
+            var probeDiscovered = await ProbeNextJsBuildId(httpClient);
+            if (!string.IsNullOrWhiteSpace(probeDiscovered) && probeDiscovered != buildId)
+            {
+                Console.WriteLine($"[CricHeroes] Probe discovered buildId: {probeDiscovered}");
+                _cachedBuildId = probeDiscovered;
+                var result = await FetchNextData(probeDiscovered, pathSegment, matchUrl, httpClient);
+                if (result != null)
+                    return result;
+            }
+
+            // Last resort: full HTML page scraping (blocked by Cloudflare on server IPs)
+            var staleBuildId = buildId;
+            buildId = await DiscoverBuildId(matchUrl, httpClient, staleBuildId);
             if (string.IsNullOrWhiteSpace(buildId))
                 return null;
 
@@ -296,44 +311,66 @@ public class CricHeroesScraper : IProviderScraper
     }
 
     /// <summary>
+    /// Discover the live buildId by deliberately requesting a fake one.
+    /// Next.js responds with a 404 HTML page that always embeds __NEXT_DATA__ with the real buildId.
+    /// This tends to bypass Cloudflare because it looks like a static asset request, not a browser visit.
+    /// </summary>
+    private static async Task<string?> ProbeNextJsBuildId(HttpClient httpClient)
+    {
+        try
+        {
+            // Use a known-minimal path so Next.js generates a 404 quickly without app-level blocking
+            var probeUrl = "https://cricheroes.com/_next/data/__PROBE__/index.json";
+            var request = new HttpRequestMessage(HttpMethod.Get, probeUrl);
+            request.Headers.Add("Accept", "text/html,application/json");
+            // No x-nextjs-data header — we want the 404 HTML page, not JSON
+
+            var response = await _nextDataClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            return ExtractBuildIdFromResponse(content);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Discover the Next.js buildId when the cached one is stale.
     /// Strategy: attempt page scrape to extract buildId from HTML __NEXT_DATA__ or script URLs.
     /// </summary>
-    private async Task<string?> DiscoverBuildId(string matchUrl, HttpClient httpClient)
+    private async Task<string?> DiscoverBuildId(string matchUrl, HttpClient httpClient, string? knownStaleBuildId = null)
     {
         await _buildIdLock.WaitAsync();
         try
         {
-            // Double-check: another thread may have already refreshed it
-            if (!string.IsNullOrWhiteSpace(_cachedBuildId))
+            // Double-check: another thread may have already refreshed it.
+            // Only skip discovery if the cached value is different from the known stale one.
+            if (!string.IsNullOrWhiteSpace(_cachedBuildId) && _cachedBuildId != knownStaleBuildId)
                 return _cachedBuildId;
 
-            // Try scraping the actual match page to find buildId in HTML
-            var discovered = await TryScrapeBuildId(matchUrl, httpClient);
-            if (!string.IsNullOrWhiteSpace(discovered))
-            {
-                _cachedBuildId = discovered;
-                return discovered;
-            }
+            Console.WriteLine($"[CricHeroes] Auto-discovering buildId (stale: {knownStaleBuildId})");
 
-            // Try a few well-known pages that might be less protected
+            // Probe order: homepage first (least Cloudflare-protected), then live-matches, then match page
             var probeUrls = new[]
             {
                 "https://cricheroes.com/",
-                "https://cricheroes.com/live-matches",
+                "https://cricheroes.com/live-cricket-score",
                 matchUrl
             };
 
             foreach (var probeUrl in probeUrls)
             {
-                discovered = await TryScrapeBuildId(probeUrl, httpClient);
-                if (!string.IsNullOrWhiteSpace(discovered))
+                var discovered = await TryScrapeBuildId(probeUrl, httpClient);
+                if (!string.IsNullOrWhiteSpace(discovered) && discovered != knownStaleBuildId)
                 {
+                    Console.WriteLine($"[CricHeroes] Discovered new buildId: {discovered} (from {probeUrl})");
                     _cachedBuildId = discovered;
                     return discovered;
                 }
             }
 
+            Console.WriteLine("[CricHeroes] Auto-discovery failed — all probe URLs blocked or returned no buildId");
             return null;
         }
         finally
