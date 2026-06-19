@@ -91,12 +91,14 @@
             position: fixed;
             inset: 0;
             display: none;
-            align-items: center;
-            justify-content: center;
             pointer-events: none;
         }
 
         .intro-card {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
             max-width: min(820px, 90vw);
             background: linear-gradient(180deg, rgba(10,18,36,0.88), rgba(8,14,28,0.92));
             border: 1px solid rgba(56,189,248,0.35);
