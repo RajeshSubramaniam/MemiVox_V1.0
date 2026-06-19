@@ -17,10 +17,11 @@
         .scoreboard {
             display: inline-block;
             white-space: nowrap;
+            min-width: min(980px, calc(100vw - 80px));
             background: linear-gradient(180deg, rgba(10,18,36,0.92), rgba(8,14,28,0.96));
             border: 1px solid rgba(56,189,248,0.35);
             border-radius: 8px;
-            padding: 8px 20px;
+            padding: 10px 24px;
             color: #eff6ff;
             box-shadow: 0 4px 24px rgba(0,0,0,0.5);
         }
@@ -29,29 +30,29 @@
         .row1 {
             display: flex;
             align-items: center;
-            gap: 16px;
-            height: 32px;
+            gap: 18px;
+            height: 38px;
         }
         .team-score-block {
             display: flex;
             align-items: baseline;
             gap: 6px;
         }
-        .batting-team { font-size: 15px; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
-        .score-big { font-size: 24px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
-        .overs { font-size: 12px; color: #94a3b8; }
+        .batting-team { font-size: 17px; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
+        .score-big { font-size: 30px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+        .overs { font-size: 13px; color: #94a3b8; }
         .vs { font-size: 11px; color: #475569; margin: 0 2px; }
-        .other-team { font-size: 12px; color: #64748b; white-space: nowrap; }
-        .other-summary { font-size: 12px; color: #94a3b8; font-weight: 600; margin-left: 4px; }
+        .other-team { font-size: 13px; color: #64748b; white-space: nowrap; }
+        .other-summary { font-size: 13px; color: #94a3b8; font-weight: 600; margin-left: 4px; }
 
         .sep { width: 1px; height: 20px; background: rgba(148,163,184,0.2); flex-shrink: 0; }
 
-        .target-info { font-size: 12px; color: #facc15; font-weight: 600; white-space: nowrap; }
-        .summary-info { font-size: 12px; color: #38bdf8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .target-info { font-size: 13px; color: #facc15; font-weight: 600; white-space: nowrap; }
+        .summary-info { font-size: 13px; color: #38bdf8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .status-pill {
-            font-size: 9px;
-            padding: 2px 8px;
+            font-size: 10px;
+            padding: 3px 9px;
             border-radius: 999px;
             background: #16a34a;
             color: #fff;
@@ -67,27 +68,92 @@
         .row2 {
             display: flex;
             align-items: center;
-            gap: 14px;
-            height: 26px;
-            font-size: 11px;
+            gap: 16px;
+            height: 30px;
+            font-size: 13px;
             color: #94a3b8;
         }
         .player-info { white-space: nowrap; }
-        .player-name { color: #cbd5e1; font-weight: 600; }
-        .player-stat { color: #93c5fd; font-weight: 700; margin-left: 2px; }
+        .player-name { color: #cbd5e1; font-weight: 700; font-size: 13px; }
+        .player-stat { color: #93c5fd; font-weight: 700; font-size: 13px; margin-left: 3px; }
         .lbl { color: #475569; }
-        .val { color: #cbd5e1; font-weight: 600; }
-        .val-highlight { color: #facc15; font-weight: 600; }
+        .val { color: #cbd5e1; font-weight: 700; }
+        .val-highlight { color: #facc15; font-weight: 700; }
 
-        .toss-text { font-size: 10px; color: #475569; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+        .toss-text { font-size: 11px; color: #475569; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
 
         .waiting {
             /* Hidden in OBS overlay — no visible text on transparent canvas */
             display: none;
         }
+
+        .intro-stage {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .intro-card {
+            max-width: min(820px, 90vw);
+            background: linear-gradient(180deg, rgba(10,18,36,0.88), rgba(8,14,28,0.92));
+            border: 1px solid rgba(56,189,248,0.35);
+            border-radius: 10px;
+            padding: 18px 24px;
+            color: #eff6ff;
+            text-align: center;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+        }
+
+        .intro-title {
+            font-size: clamp(24px, 4.2vw, 44px);
+            font-weight: 800;
+            letter-spacing: -0.3px;
+            line-height: 1.15;
+            color: #f8fafc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .intro-tagline {
+            margin-top: 8px;
+            font-size: clamp(12px, 1.7vw, 18px);
+            color: #7dd3fc;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @media (max-width: 1366px) {
+            .scoreboard {
+                min-width: min(900px, calc(100vw - 48px));
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .scoreboard {
+                min-width: 0;
+                max-width: calc(100vw - 24px);
+            }
+            .overlay-anchor {
+                left: 12px;
+                bottom: 12px;
+            }
+        }
     </style>
 </head>
 <body>
+
+<div id="introStage" class="intro-stage">
+    <div class="intro-card">
+        <div id="introTitle" class="intro-title"></div>
+        <div id="introTagline" class="intro-tagline"></div>
+    </div>
+</div>
 
 <div class="overlay-anchor">
 
@@ -158,10 +224,26 @@
 
 <script>
     const pathParts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/');
-    const setupId = pathParts[0] || new URLSearchParams(window.location.search).get('setupId') || 'UNKNOWN';
+    const query = new URLSearchParams(window.location.search);
+    const setupId = pathParts[0] || query.get('setupId') || 'UNKNOWN';
 
     const scoreboard = document.getElementById('scoreboard');
     const waitingMsg = document.getElementById('waitingMsg');
+    const introStage = document.getElementById('introStage');
+    const introTitle = document.getElementById('introTitle');
+    const introTagline = document.getElementById('introTagline');
+
+    const introPlayedKey = 'myscorer_intro_played_' + setupId;
+    const lastStatusKey = 'myscorer_last_status_' + setupId;
+    const lastMatchUrlKey = 'myscorer_last_match_url_' + setupId;
+
+    // Test helper: add ?resetIntro=1 to replay intro logic for this setup session.
+    const shouldResetIntro = /^(1|true|yes)$/i.test(query.get('resetIntro') || '');
+    if (shouldResetIntro) {
+        localStorage.removeItem(introPlayedKey);
+        localStorage.removeItem(lastStatusKey);
+        localStorage.removeItem(lastMatchUrlKey);
+    }
 
     async function poll() {
         try {
@@ -178,12 +260,43 @@
                 return;
             }
 
-            const isScheduled = d.matchStatus && d.matchStatus.toLowerCase() === 'scheduled';
-            if (isScheduled) {
-                const teams = [d.teamA, d.teamB].filter(Boolean).join(' vs ');
-                showWaiting(teams ? teams + ' — Match starts soon' : 'Match starts soon');
+            // If a different match is registered for the same setup, replay intro flow.
+            const currentMatchUrl = (d.matchUrl || '').trim();
+            const previousMatchUrl = localStorage.getItem(lastMatchUrlKey) || '';
+            if (currentMatchUrl && previousMatchUrl && currentMatchUrl !== previousMatchUrl) {
+                localStorage.removeItem(introPlayedKey);
+                localStorage.removeItem(lastStatusKey);
+            }
+            if (currentMatchUrl) {
+                localStorage.setItem(lastMatchUrlKey, currentMatchUrl);
+            }
+
+            const statusKind = getStatusKind(d.matchStatus);
+            const previousStatusKind = localStorage.getItem(lastStatusKey) || '';
+            const introAlreadyPlayed = localStorage.getItem(introPlayedKey) === '1';
+
+            // Pre-match: keep intro visible in the center until the game goes live.
+            if (statusKind === 'pre') {
+                showIntro(d);
+                localStorage.setItem(lastStatusKey, statusKind);
                 return;
             }
+
+            // Live transition behavior:
+            // - First time seeing LIVE from PRE (or unknown) => play intro once for one poll cycle.
+            // - Refresh while already LIVE => skip intro because status is already persisted as LIVE.
+            if (statusKind === 'live') {
+                const isTransitionToLive = previousStatusKind !== 'live';
+                if (!introAlreadyPlayed && isTransitionToLive) {
+                    showIntro(d);
+                    localStorage.setItem(introPlayedKey, '1');
+                    localStorage.setItem(lastStatusKey, statusKind);
+                    return;
+                }
+            }
+
+            hideIntro();
+            localStorage.setItem(lastStatusKey, statusKind);
 
             scoreboard.style.display = 'block';
             waitingMsg.style.display = 'none';
@@ -291,9 +404,73 @@
     }
 
     function showWaiting(text) {
+        hideIntro();
         scoreboard.style.display = 'none';
         waitingMsg.style.display = 'block';
         waitingMsg.textContent = text;
+    }
+
+    function showIntro(data) {
+        const teamA = (data.teamA || 'Team A').trim();
+        const teamB = (data.teamB || 'Team B').trim();
+        introTitle.textContent = teamA + ' vs ' + teamB;
+        introTagline.textContent = deriveTagline(data);
+
+        introStage.style.display = 'flex';
+        scoreboard.style.display = 'none';
+        waitingMsg.style.display = 'none';
+    }
+
+    function hideIntro() {
+        introStage.style.display = 'none';
+    }
+
+    function getStatusKind(matchStatus) {
+        const s = (matchStatus || '').toString().trim().toLowerCase();
+        if (!s) return 'unknown';
+
+        if (s === 'live' || s === 'in_progress' || s === 'in progress' || s === 'inprogress') return 'live';
+        if (s === 'scheduled' || s === 'upcoming' || s === 'not_started' || s === 'not started' || s === 'prematch' || s === 'pre') return 'pre';
+        if (s === 'completed' || s === 'past' || s === 'resulted' || s === 'final' || s === 'forfeit') return 'post';
+        return 'unknown';
+    }
+
+    function deriveTagline(data) {
+        const fromUrl = extractCompetitionFromUrl(data.matchUrl || '', data.providerType || '');
+        if (fromUrl) return fromUrl;
+
+        if (data.providerType) return data.providerType + ' Match';
+        return 'Live Match';
+    }
+
+    function extractCompetitionFromUrl(matchUrl, providerType) {
+        try {
+            const u = new URL(matchUrl);
+            const segments = u.pathname.split('/').filter(Boolean);
+            const p = (providerType || '').toLowerCase();
+
+            if (p.includes('cricheroes') && segments.length >= 3 && segments[0].toLowerCase() === 'scorecard') {
+                return slugToTitle(segments[2]);
+            }
+
+            if (p.includes('playhq')) {
+                const idx = segments.findIndex(x => x.toLowerCase() === 'game' || x.toLowerCase() === 'game-centre');
+                if (idx > 0) return slugToTitle(segments[idx - 1]);
+            }
+        } catch {
+            return '';
+        }
+
+        return '';
+    }
+
+    function slugToTitle(value) {
+        if (!value) return '';
+        return decodeURIComponent(value)
+            .replace(/[-_]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/\b\w/g, m => m.toUpperCase());
     }
 
     poll();
