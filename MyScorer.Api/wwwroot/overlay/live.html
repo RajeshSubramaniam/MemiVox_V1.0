@@ -18,49 +18,59 @@
             display: inline-block;
             white-space: nowrap;
             min-width: min(980px, calc(100vw - 80px));
-            background: linear-gradient(180deg, rgba(10,18,36,0.92), rgba(8,14,28,0.96));
-            border: 1px solid rgba(56,189,248,0.35);
-            border-radius: 8px;
-            padding: 10px 24px;
+            background: linear-gradient(180deg, #121a2e 0%, #0b101d 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            padding: 0;
             color: #eff6ff;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.55);
+            overflow: hidden;
+            font-family: 'Arial Black', 'Segoe UI', Arial, sans-serif;
+            letter-spacing: 0.35px;
+            text-transform: uppercase;
         }
 
         /* Row 1: Team scores, batting score, status */
         .row1 {
             display: flex;
             align-items: center;
-            gap: 18px;
-            height: 38px;
+            gap: 14px;
+            min-height: 48px;
+            padding: 10px 16px;
+            background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+            border-bottom: 3px solid #f5b041;
         }
         .team-score-block {
             display: flex;
             align-items: baseline;
-            gap: 6px;
+            gap: 4px;
+            min-width: 0;
         }
-        .batting-team { font-size: 17px; font-weight: 700; color: #e2e8f0; white-space: nowrap; }
-        .score-big { font-size: 30px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
-        .overs { font-size: 13px; color: #bcc9d4; }
-        .vs { font-size: 11px; color: #7c8ca4; margin: 0 2px; }
-        .other-team { font-size: 13px; color: #9db4ca; white-space: nowrap; }
-        .other-summary { font-size: 13px; color: #a8b9cd; font-weight: 600; margin-left: 4px; }
+        .batting-team { font-size: 15px; font-weight: 900; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .score-big { font-size: 33px; font-weight: 900; color: #f5b041; letter-spacing: -1px; line-height: 1; }
+        .overs { font-size: 12px; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; font-weight: 700; }
+        .vs { font-size: 10px; color: #85929e; margin: 0; }
+        .other-team { font-size: 13px; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .other-summary { font-size: 12px; color: #9ba8b4; font-weight: 700; margin-left: 2px; font-family: 'Segoe UI', Arial, sans-serif; }
 
-        .sep { width: 1px; height: 20px; background: rgba(148,163,184,0.2); flex-shrink: 0; }
+        .sep { width: 1px; height: 18px; background: rgba(255,255,255,0.12); flex-shrink: 0; }
+        #sepBowler { margin-left: auto; }
 
-        .target-info { font-size: 13px; color: #ffd966; font-weight: 600; white-space: nowrap; }
-        .summary-info { font-size: 13px; color: #64d9ff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .target-info { font-size: 12px; color: #f5b041; font-weight: 800; white-space: nowrap; }
+        .summary-info { font-size: 12px; color: #dbe5ef; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Segoe UI', Arial, sans-serif; text-transform: none; }
 
         .status-pill {
             font-size: 10px;
-            padding: 3px 9px;
-            border-radius: 999px;
-            background: #16a34a;
+            padding: 3px 8px;
+            border-radius: 2px;
+            background: #e74c3c;
             color: #fff;
-            font-weight: 700;
+            font-weight: 900;
             text-transform: uppercase;
             white-space: nowrap;
             margin-left: auto;
             flex-shrink: 0;
+            letter-spacing: 0.5px;
         }
         .status-pill.completed { background: #64748b; }
 
@@ -68,19 +78,24 @@
         .row2 {
             display: flex;
             align-items: center;
-            gap: 16px;
-            height: 30px;
-            font-size: 13px;
-            color: #94a3b8;
+            gap: 12px;
+            min-height: 38px;
+            padding: 8px 16px;
+            font-size: 12px;
+            color: #a9b5c2;
+            background: #0e1424;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            text-transform: none;
         }
         .player-info { white-space: nowrap; }
-        .player-name { color: #cbd5e1; font-weight: 700; font-size: 13px; }
-        .player-stat { color: #93c5fd; font-weight: 700; font-size: 13px; margin-left: 3px; }
-        .lbl { color: #7c8ca4; }
-        .val { color: #cbd5e1; font-weight: 700; }
-        .val-highlight { color: #ffd966; font-weight: 700; }
+        .player-name { color: #ffffff; font-weight: 700; font-size: 12px; }
+        .player-stat { color: #f5b041; font-weight: 800; font-size: 12px; margin-left: 2px; }
+        .lbl { color: #85929e; font-size: 11px; font-weight: 700; }
+        .val { color: #dce5ee; font-weight: 700; }
+        .val-highlight { color: #f5b041; font-weight: 800; }
 
-        .toss-text { font-size: 11px; color: #8097a8; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; }
+        .toss-text { font-size: 11px; color: #85929e; font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto; font-weight: 700; }
 
         .waiting {
             /* Hidden in OBS overlay — no visible text on transparent canvas */
@@ -99,35 +114,374 @@
             left: 40px;
             top: 50%;
             transform: translateY(-50%);
-            max-width: min(820px, 90vw);
+            width: min(980px, calc(100vw - 80px));
             background: linear-gradient(180deg, rgba(10,18,36,0.88), rgba(8,14,28,0.92));
             border: 1px solid rgba(56,189,248,0.35);
             border-radius: 10px;
-            padding: 18px 24px;
+            padding: 16px 20px;
             color: #eff6ff;
             text-align: center;
             box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
         }
 
-        .intro-title {
-            font-size: clamp(24px, 4.2vw, 44px);
+        .intro-team-a {
+            font-size: clamp(18px, 3.2vw, 32px);
             font-weight: 800;
-            letter-spacing: -0.3px;
-            line-height: 1.15;
+            letter-spacing: -0.2px;
+            line-height: 1.1;
             color: #f8fafc;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .intro-vs {
+            font-size: clamp(10px, 1.4vw, 14px);
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            line-height: 1;
+        }
+
+        .intro-team-b {
+            font-size: clamp(18px, 3.2vw, 32px);
+            font-weight: 800;
+            letter-spacing: -0.2px;
+            line-height: 1.1;
+            color: #f8fafc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
         }
 
         .intro-tagline {
-            margin-top: 8px;
-            font-size: clamp(12px, 1.7vw, 18px);
+            margin-top: 2px;
+            font-size: clamp(11px, 1.5vw, 16px);
             color: #7dd3fc;
             font-weight: 600;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .fullcard-stage {
+            position: fixed;
+            inset: 0;
+            display: none;
+            pointer-events: none;
+            background: transparent;
+        }
+
+        .fullcard-overlay {
+            position: fixed;
+            left: 40px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: min(980px, calc(100vw - 80px));
+            max-height: min(88vh, 820px);
+            background: linear-gradient(180deg, #121a2e 0%, #0b101d 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            padding: 10px 12px;
+            color: #eff6ff;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+            pointer-events: none;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fc-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+            padding: 12px 14px;
+            border-bottom: 3px solid #f5b041;
+            border-radius: 0;
+            background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+            flex-shrink: 0;
+        }
+
+        .fc-head-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .fc-live-bug {
+            background: #e74c3c;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 2px;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+        }
+
+        .fc-match-title {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fc-match-meta {
+            color: #85929e;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .fc-team {
+            font-size: 15px;
+            font-weight: 700;
+            color: #e2e8f0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .fc-team.right {
+            text-align: right;
+        }
+
+        .fc-vs {
+            color: #bfdbfe;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .fc-score {
+            font-size: 30px;
+            font-weight: 800;
+            color: #fff;
+            text-align: center;
+            line-height: 1;
+            margin-bottom: 1px;
+        }
+
+        .fc-overs {
+            font-size: 12px;
+            color: #9fb0c6;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .fc-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: rgba(255, 255, 255, 0.08);
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .fc-panel {
+            border: 0;
+            border-radius: 0;
+            background: #0e1424;
+            padding: 14px 16px;
+            min-height: 0;
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fc-panel.batters .fc-label {
+            margin-bottom: 2px;
+        }
+
+        .fc-panel.batters .fc-content {
+            overflow: visible;
+        }
+
+        .fc-col-right {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1;
+        }
+
+        .fc-panel.full {
+            grid-column: 1 / -1;
+        }
+
+        .fc-label {
+            color: #f5b041;
+            font-size: 14px;
+            font-weight: 900;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+            border-left: 4px solid #f5b041;
+            padding-left: 10px;
+        }
+
+        .fc-col-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0;
+            padding: 6px 0;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+            margin-bottom: 4px;
+            color: #85929e;
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.45px;
+            flex-shrink: 0;
+        }
+
+        .fc-content {
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fc-line {
+            color: #e2e8f0;
+            font-size: 11px;
+            line-height: 1.3;
+            margin-bottom: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-shrink: 0;
+        }
+
+        .fc-kv-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: baseline;
+            gap: 0;
+            margin-bottom: 0;
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            min-width: 0;
+        }
+
+        .fc-kv-name {
+            color: #ffffff;
+            font-size: 13px;
+            line-height: 1.25;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+            padding-right: 8px;
+        }
+
+        .fc-kv-value {
+            color: #f5b041;
+            font-size: 13px;
+            line-height: 1.25;
+            font-weight: 900;
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .fc-tail {
+            color: #93a7bd;
+            font-size: 10px;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .fc-footer-bottom {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-top: 8px;
+            padding-top: 12px;
+            border-top: 2px solid rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+            background: #070b14;
+            padding-left: 8px;
+            padding-right: 8px;
+            padding-bottom: 8px;
+        }
+
+        .fc-score-box {
+            background: linear-gradient(135deg, #1c2841 0%, #0f172a 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            padding: 12px 18px;
+            text-align: right;
+            flex-shrink: 0;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        .fc-score-value {
+            font-size: 40px;
+            font-weight: 900;
+            color: #f5b041;
+            line-height: 1;
+            letter-spacing: -1px;
+        }
+
+        .fc-score-box .fc-overs {
+            margin-bottom: 0;
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 700;
+            margin-top: 3px;
+            text-align: right;
+        }
+
+        .fc-footer {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(56,189,248,0.15);
+            flex-shrink: 0;
+        }
+
+        .fc-footer-label {
+            color: #85929e;
+            font-size: 11px;
+            font-weight: 900;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .fc-footer-line {
+            color: #cfd7df;
+            font-size: 11px;
+            line-height: 1.35;
+            margin-bottom: 1px;
+        }
+
+        .fc-note {
+            color: #94a3b8;
+            font-size: 11px;
+            margin-top: 8px;
         }
 
         @media (max-width: 1366px) {
@@ -147,8 +501,91 @@
             }
             .intro-card {
                 left: 12px;
-                max-width: calc(100vw - 24px);
+                top: 50%;
+                width: calc(100vw - 24px);
             }
+
+            .fullcard-overlay {
+                width: calc(100vw - 24px);
+                left: 12px;
+                top: 50%;
+                max-height: calc(100vh - 24px);
+                padding: 10px;
+            }
+
+            .fc-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .fc-score {
+                font-size: 26px;
+            }
+
+            .fc-team {
+                font-size: 13px;
+            }
+
+            .fc-line {
+                font-size: 10px;
+            }
+
+            .fc-kv-name,
+            .fc-kv-value {
+                font-size: 11px;
+            }
+
+            .fc-score-value {
+                font-size: 32px;
+            }
+
+            .fc-score-box .fc-overs {
+                font-size: 13px;
+            }
+
+            .fc-footer-bottom {
+                gap: 4px;
+            }
+
+            .fc-match-title {
+                font-size: 14px;
+            }
+
+            .fc-match-meta {
+                font-size: 10px;
+            }
+
+            .fc-label {
+                font-size: 12px;
+            }
+
+            .row1 {
+                min-height: 42px;
+                padding: 8px 10px;
+                gap: 9px;
+            }
+
+            .score-big {
+                font-size: 28px;
+            }
+
+            .batting-team,
+            .other-team {
+                font-size: 12px;
+            }
+
+            .row2 {
+                min-height: 34px;
+                padding: 7px 10px;
+                gap: 8px;
+                font-size: 11px;
+            }
+
+            .player-name,
+            .player-stat {
+                font-size: 11px;
+            }
+
         }
     </style>
 </head>
@@ -156,15 +593,23 @@
 
 <div id="introStage" class="intro-stage">
     <div class="intro-card">
-        <div id="introTitle" class="intro-title"></div>
+        <div id="introTeamA" class="intro-team-a"></div>
+        <div id="introVs" class="intro-vs">vs</div>
+        <div id="introTeamB" class="intro-team-b"></div>
         <div id="introTagline" class="intro-tagline"></div>
+    </div>
+</div>
+
+<div id="fullcardStage" class="fullcard-stage">
+    <div class="fullcard-overlay">
+        <div id="fullcardContent"></div>
     </div>
 </div>
 
 <div class="overlay-anchor">
 
 <div id="scoreboard" class="scoreboard" style="display:none;">
-    <!-- Row 1: Score -->
+    <!-- Row 1: Batting score + current players -->
     <div class="row1">
         <div class="team-score-block">
             <span class="batting-team" id="battingTeam"></span>
@@ -172,21 +617,7 @@
             <span class="score-big" id="scoreBig"></span>
             <span class="overs" id="oversLabel"></span>
         </div>
-        <span class="vs">vs</span>
-        <span class="other-team" id="otherTeam"></span>
-        <span class="other-summary" id="otherSummary"></span>
 
-        <span class="sep" id="sepTarget" style="display:none;"></span>
-        <span class="target-info" id="targetInfo" style="display:none;"></span>
-
-        <span class="sep" id="sepSummary" style="display:none;"></span>
-        <span class="summary-info" id="summaryInfo" style="display:none;"></span>
-
-        <span class="status-pill" id="statusPill">LIVE</span>
-    </div>
-
-    <!-- Row 2: Details -->
-    <div class="row2">
         <span class="player-info" id="bat1Block">
             <span class="lbl">🏏 </span><span class="player-name" id="bat1Name"></span>
             <span class="player-stat" id="bat1Runs"></span>
@@ -196,12 +627,25 @@
             <span class="player-stat" id="bat2Runs"></span>
         </span>
 
-        <span class="sep"></span>
+        <span class="sep" id="sepBowler"></span>
 
         <span class="player-info" id="bowlBlock">
             <span class="lbl">🔴 </span><span class="player-name" id="bowlName"></span>
             <span class="player-stat" id="bowlFigures"></span>
         </span>
+    </div>
+
+    <!-- Row 2: Opponent + match context -->
+    <div class="row2">
+        <span class="vs">vs</span>
+        <span class="other-team" id="otherTeam"></span>
+        <span class="other-summary" id="otherSummary"></span>
+
+        <span class="sep" id="sepTarget" style="display:none;"></span>
+        <span class="target-info" id="targetInfo" style="display:none;"></span>
+
+        <span class="sep" id="sepSummary" style="display:none;"></span>
+        <span class="summary-info" id="summaryInfo" style="display:none;"></span>
 
         <span class="sep"></span>
 
@@ -221,6 +665,7 @@
         </span>
 
         <span class="toss-text" id="tossText"></span>
+        <span class="status-pill" id="statusPill">LIVE</span>
     </div>
 </div>
 
@@ -238,10 +683,36 @@
     const introStage = document.getElementById('introStage');
     const introTitle = document.getElementById('introTitle');
     const introTagline = document.getElementById('introTagline');
+    const fullcardStage = document.getElementById('fullcardStage');
+    const fullcardContent = document.getElementById('fullcardContent');
+        const fullcardOverlay = document.querySelector('.fullcard-overlay');
 
     const introPlayedKey = 'myscorer_intro_played_' + setupId;
     const lastStatusKey = 'myscorer_last_status_' + setupId;
     const lastMatchUrlKey = 'myscorer_last_match_url_' + setupId;
+    const lastOversKey = 'myscorer_last_overs_' + setupId;
+    let fullcardHideTimer = null;
+        let lastLiveCardRect = null;
+    let fastRetryTimer = null;
+    let pollInFlight = false;
+    let fullcardRequestInFlight = false;
+
+        function syncFullcardWithLiveCard() {
+            if (!fullcardOverlay || !scoreboard) return;
+
+            const rect = scoreboard.getBoundingClientRect();
+            if (scoreboard.style.display !== 'none' && rect.width > 0) {
+                lastLiveCardRect = rect;
+                fullcardOverlay.style.left = `${Math.round(rect.left)}px`;
+                fullcardOverlay.style.width = `${Math.round(rect.width)}px`;
+                return;
+            }
+
+            if (lastLiveCardRect && lastLiveCardRect.width > 0) {
+                fullcardOverlay.style.left = `${Math.round(lastLiveCardRect.left)}px`;
+                fullcardOverlay.style.width = `${Math.round(lastLiveCardRect.width)}px`;
+            }
+        }
 
     // Test helper: add ?resetIntro=1 to replay intro logic for this setup session.
     const shouldResetIntro = /^(1|true|yes)$/i.test(query.get('resetIntro') || '');
@@ -249,9 +720,12 @@
         localStorage.removeItem(introPlayedKey);
         localStorage.removeItem(lastStatusKey);
         localStorage.removeItem(lastMatchUrlKey);
+        localStorage.removeItem(lastOversKey);
     }
 
     async function poll() {
+        if (pollInFlight) return;
+        pollInFlight = true;
         try {
             const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/live-score');
             if (!res.ok) { showWaiting('Setup not found'); return; }
@@ -272,6 +746,8 @@
             if (currentMatchUrl && previousMatchUrl && currentMatchUrl !== previousMatchUrl) {
                 localStorage.removeItem(introPlayedKey);
                 localStorage.removeItem(lastStatusKey);
+                localStorage.removeItem(lastOversKey);
+                hideFullcard();
             }
             if (currentMatchUrl) {
                 localStorage.setItem(lastMatchUrlKey, currentMatchUrl);
@@ -303,11 +779,38 @@
 
             hideIntro();
             localStorage.setItem(lastStatusKey, statusKind);
+            clearFastRetry();
 
             scoreboard.style.display = 'block';
             waitingMsg.style.display = 'none';
 
             const isCompleted = d.matchStatus && d.matchStatus.toLowerCase() === 'completed';
+
+            // ============ FULLCARD OVERLAY LOGIC ============
+            // Detect when an over completes (overs value changes to X.0)
+            const currentOvers = d.overs || '';
+            const lastOvers = localStorage.getItem(lastOversKey) || '';
+
+            // Detect over completion across providers:
+            // supports x.0 and whole-over integer formats like "8".
+            const oversChanged = currentOvers !== lastOvers;
+            const hasPreviousOvers = !!lastOvers;
+            const lastBalls = parseOversToBalls(lastOvers);
+            const currentBalls = parseOversToBalls(currentOvers);
+            const isOverComplete = hasPreviousOvers &&
+                lastBalls !== null &&
+                currentBalls !== null &&
+                currentBalls > lastBalls &&
+                currentBalls % 6 === 0 &&
+                Math.floor(currentBalls / 6) > Math.floor(lastBalls / 6);
+            
+            if (oversChanged && isOverComplete && !isCompleted) {
+                // Fetch detailed full scorecard only when needed (end of over)
+                showFullcardOnDemand(d);
+            }
+
+            localStorage.setItem(lastOversKey, currentOvers);
+            // ============ END FULLCARD LOGIC ============
 
             // Row 1: Score
             document.getElementById('battingTeam').textContent = d.battingTeam || d.teamA || '';
@@ -391,10 +894,15 @@
 
                 // Toss
                 document.getElementById('tossText').textContent = d.tossResult || '';
+
+                    // Keep fullcard edges exactly aligned with the live score card width.
+                    syncFullcardWithLiveCard();
             }
 
         } catch (e) {
             showWaiting('Unable to reach server');
+        } finally {
+            pollInFlight = false;
         }
     }
 
@@ -411,16 +919,36 @@
 
     function showWaiting(text) {
         hideIntro();
+        hideFullcard();
         scoreboard.style.display = 'none';
         waitingMsg.style.display = 'block';
         waitingMsg.textContent = text;
+        scheduleFastRetry();
+    }
+
+    function scheduleFastRetry() {
+        if (fastRetryTimer) return;
+        fastRetryTimer = setTimeout(() => {
+            fastRetryTimer = null;
+            poll();
+        }, 2000);
+    }
+
+    function clearFastRetry() {
+        if (!fastRetryTimer) return;
+        clearTimeout(fastRetryTimer);
+        fastRetryTimer = null;
     }
 
     function showIntro(data) {
+        hideFullcard();
         const teamA = (data.teamA || 'Team A').trim();
         const teamB = (data.teamB || 'Team B').trim();
-        introTitle.textContent = teamA + ' vs ' + teamB;
-        introTagline.textContent = deriveTagline(data);
+        const tagline = deriveTagline(data);
+        
+        document.getElementById('introTeamA').textContent = teamA;
+        document.getElementById('introTeamB').textContent = teamB;
+        document.getElementById('introTagline').textContent = tagline;
 
         introStage.style.display = 'flex';
         scoreboard.style.display = 'none';
@@ -430,6 +958,263 @@
     function hideIntro() {
         introStage.style.display = 'none';
     }
+
+    async function showFullcardOnDemand(fallbackData) {
+        if (fullcardRequestInFlight) return;
+        fullcardRequestInFlight = true;
+        try {
+            const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/full-scorecard', { cache: 'no-store' });
+            if (!res.ok) {
+                return;
+            }
+
+            const full = await res.json();
+            const hasDetailed = hasMeaningfulFullcardPayload(full);
+
+            if (hasDetailed) {
+                showFullcard(full, true, full.fullScorecardNote || '');
+                return;
+            }
+        } catch {
+            // No fallback render — only show when detailed scorecard is available.
+        } finally {
+            fullcardRequestInFlight = false;
+        }
+    }
+
+    function hasMeaningfulFullcardPayload(full) {
+        if (!full || !full.isValid || !full.isFullScorecardAvailable) return false;
+
+        const hasNamedBatters =
+            Array.isArray(full.battersBatted) && full.battersBatted.some(b => (b && (b.name || '').toString().trim())) ||
+            Array.isArray(full.battersYetToBat) && full.battersYetToBat.some(b => (b && (b.name || '').toString().trim()));
+
+        const hasNamedBowlers =
+            Array.isArray(full.bowlersBowled) && full.bowlersBowled.some(b => (b && (b.name || '').toString().trim()));
+
+        const hasMeaningfulInnings =
+            Array.isArray(full.allInnings) && full.allInnings.some(i => {
+                if (!i) return false;
+                const teamName = (i.teamName || '').toString().trim();
+                const runs = Number(i.runs || 0);
+                const wickets = Number(i.wickets || 0);
+                const overs = (i.overs || '').toString().trim();
+                return !!teamName && (runs > 0 || wickets > 0 || (overs && overs !== '0' && overs !== '0.0'));
+            });
+
+        return hasNamedBatters || hasNamedBowlers || hasMeaningfulInnings;
+    }
+
+    function showFullcard(data, isDetailed, note) {
+        const battingTeam = data.battingTeam || data.teamA || 'Team A';
+        const otherTeam = data.battingTeam === data.teamA ? data.teamB : data.teamA;
+        const runs = Number.isFinite(Number(data.runs)) ? Number(data.runs) : 0;
+        const wickets = Number.isFinite(Number(data.wickets)) ? Number(data.wickets) : 0;
+        const overs = (data.overs || '0.0').toString();
+        const compactMode = window.innerWidth <= 1024;
+        const maxBatterLines = 12;
+        const maxBowlerLines = compactMode ? 5 : 8;
+        const maxInningsLines = compactMode ? 2 : 3;
+
+        let summary = '';
+        
+        // Header with broadcast-style match title and meta
+        summary += `<div class="fc-head">`;
+        summary += `<div class="fc-head-left">`;
+        summary += `<div class="fc-live-bug">LIVE</div>`;
+        summary += `<div class="fc-match-title">${escapeHtml(battingTeam)} v ${escapeHtml(otherTeam || '')}</div>`;
+        summary += `</div>`;
+        summary += `<div class="fc-match-meta">${escapeHtml(overs)} OV</div>`;
+        summary += `</div>`;
+
+        // Main grid: left (batters) + right (bowlers + score)
+        summary += `<div class="fc-grid">`;
+        
+        if (isDetailed) {
+            // LEFT COLUMN: All Batters
+            summary += `<div class="fc-panel batters">`;
+            summary += `<div class="fc-label">Batting</div>`;
+            summary += `<div class="fc-col-head"><div>Batsman</div><div>R(B)</div></div>`;
+            summary += `<div class="fc-content">`;
+            
+            let batterRows = [];
+            if (data.battersBatted && data.battersBatted.length) {
+                batterRows.push(...data.battersBatted.map(b => ({
+                    name: b.name,
+                    value: `${b.runs}(${b.balls})`
+                })));
+            }
+            if (data.battersYetToBat && data.battersYetToBat.length) {
+                batterRows.push(...data.battersYetToBat.map(b => ({
+                    name: b.name,
+                    value: '-'
+                })));
+            }
+
+            // Keep a single row per player while preserving order from scorecard.
+            const seenNames = new Set();
+            batterRows = batterRows.filter(r => {
+                const key = (r.name || '').toLowerCase();
+                if (!key || seenNames.has(key)) return false;
+                seenNames.add(key);
+                return true;
+            }).slice(0, maxBatterLines);
+            
+            if (batterRows.length > 0) {
+                summary += renderKeyValueRows(batterRows);
+            } else {
+                summary += `<div class="fc-line">-</div>`;
+            }
+            summary += `</div></div>`;
+            
+            // RIGHT COLUMN: Bowlers only
+            summary += `<div class="fc-col-right">`;
+            
+            // Bowlers panel
+            if (data.bowlersBowled && data.bowlersBowled.length) {
+                summary += `<div class="fc-panel">`;
+                summary += `<div class="fc-label">Bowling</div>`;
+                summary += `<div class="fc-col-head"><div>Bowler</div><div>W/R (O)</div></div>`;
+                summary += `<div class="fc-content">`;
+                summary += renderKeyValueRows(
+                    data.bowlersBowled.map(b => ({
+                        name: b.name,
+                        value: `${b.wickets}/${b.runs} (${b.overs || '0'} ov)`
+                    })),
+                    maxBowlerLines
+                );
+                summary += `</div></div>`;
+            }
+            
+            summary += `</div>`;
+            
+        } else {
+            // Compact mode: show current batters and bowler
+            summary += `<div class="fc-panel">`;
+            summary += `<div class="fc-label">Bat</div>`;
+            summary += `<div class="fc-content">`;
+            if (data.batsmanOnStrike || data.batsmanNonStrike) {
+                if (data.batsmanOnStrike) summary += `<div class="fc-line"><strong>${escapeHtml(shorten(data.batsmanOnStrike))}*</strong> ${escapeHtml(data.batsmanOnStrikeRuns || '')}</div>`;
+                if (data.batsmanNonStrike) summary += `<div class="fc-line"><strong>${escapeHtml(shorten(data.batsmanNonStrike))}</strong> ${escapeHtml(data.batsmanNonStrikeRuns || '')}</div>`;
+            } else {
+                summary += `<div class="fc-line">-</div>`;
+            }
+            summary += `</div></div>`;
+            
+            summary += `<div>`;
+            if (data.currentBowler) {
+                summary += `<div class="fc-panel"><div class="fc-label">Bowl</div><div class="fc-content"><div class="fc-line"><strong>${escapeHtml(shorten(data.currentBowler))}</strong> ${escapeHtml(data.currentBowlerFigures || '')}</div></div></div>`;
+            }
+            
+            summary += `<div class="fc-score-box">`;
+            summary += `<div class="fc-score-value">${runs}/${wickets}</div>`;
+            summary += `<div class="fc-overs">OV ${escapeHtml(overs)}</div>`;
+            summary += `</div>`;
+            summary += `</div>`;
+            
+            if (note) {
+                summary += `<div class="fc-note">${escapeHtml(note)}</div>`;
+            }
+        }
+        
+        summary += `</div>`;
+        
+        // Footer Bottom: Overall Match Status (left) + Score Box (right)
+        if (isDetailed) {
+            summary += `<div class="fc-footer-bottom">`;
+            
+            // Left: Overall Match Status
+            if (data.allInnings && data.allInnings.length) {
+                const inningsLines = data.allInnings.map(i => `${i.teamName}: ${i.runs}/${i.wickets} (${i.overs || '0.0'} ov)`);
+                const inningsHtml = inningsLines.slice(0, maxInningsLines)
+                    .map(line => `<div class="fc-footer-line">${escapeHtml(line)}</div>`)
+                    .join('');
+                const moreInnings = inningsLines.length > maxInningsLines 
+                    ? `<div class="fc-footer-line">+${inningsLines.length - maxInningsLines} more innings</div>`
+                    : '';
+                summary += `<div><div class="fc-footer-label">Overall Match Status</div>${inningsHtml}${moreInnings}</div>`;
+            }
+            
+            // Right: Score Box
+            summary += `<div class="fc-score-box">`;
+            summary += `<div class="fc-score-value">${runs}/${wickets}</div>`;
+            summary += `<div class="fc-overs">${escapeHtml(overs)} ov</div>`;
+            summary += `</div>`;
+            
+            summary += `</div>`;
+        }
+
+        fullcardContent.innerHTML = summary;
+        fullcardStage.style.display = 'flex';
+            syncFullcardWithLiveCard();
+
+        if (fullcardHideTimer) {
+            clearTimeout(fullcardHideTimer);
+        }
+        fullcardHideTimer = setTimeout(hideFullcard, 5000);
+    }
+
+    function hideFullcard() {
+        if (fullcardHideTimer) {
+            clearTimeout(fullcardHideTimer);
+            fullcardHideTimer = null;
+        }
+        fullcardStage.style.display = 'none';
+    }
+
+    function escapeHtml(text) {
+        return (text || '').toString()
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderLines(lines, maxLines) {
+        const safe = (lines || []).filter(x => !!x);
+        if (safe.length === 0) return '<div class="fc-line">-</div>';
+
+        const visible = safe.slice(0, maxLines)
+            .map(x => `<div class="fc-line">${escapeHtml(x)}</div>`)
+            .join('');
+        const hidden = safe.length - Math.min(safe.length, maxLines);
+        return hidden > 0 ? `${visible}<div class="fc-tail">+${hidden} more</div>` : visible;
+    }
+
+    function renderAllLines(lines, lineClass = 'fc-line') {
+        const safe = (lines || []).filter(x => !!x);
+        if (safe.length === 0) return '<div class="fc-line">-</div>';
+        return safe.map(x => `<div class="${lineClass}">${escapeHtml(x)}</div>`).join('');
+    }
+
+    function renderKeyValueRows(rows, maxRows) {
+        const safe = (rows || []).filter(r => r && r.name);
+        if (safe.length === 0) return '<div class="fc-line">-</div>';
+
+        const limit = typeof maxRows === 'number' ? maxRows : safe.length;
+        const visible = safe.slice(0, limit)
+            .map(r => `<div class="fc-kv-row"><div class="fc-kv-name">${escapeHtml(r.name)}</div><div class="fc-kv-value">${escapeHtml(r.value || '-')}</div></div>`)
+            .join('');
+
+        const hidden = safe.length - Math.min(safe.length, limit);
+        return hidden > 0 ? `${visible}<div class="fc-tail">+${hidden} more</div>` : visible;
+    }
+
+    function parseOversToBalls(value) {
+        if (value === null || value === undefined) return null;
+        const raw = value.toString().trim().toLowerCase().replace(/\s*ov(?:ers)?\.?$/, '').trim();
+        if (!raw) return null;
+
+        const m = raw.match(/^(\d+)(?:\.(\d+))?$/);
+        if (!m) return null;
+
+        const overs = parseInt(m[1], 10);
+        const ballsPart = m[2] ? parseInt(m[2], 10) : 0;
+        if (Number.isNaN(overs) || Number.isNaN(ballsPart) || ballsPart < 0 || ballsPart > 5) return null;
+        return overs * 6 + ballsPart;
+    }
+
 
     function getStatusKind(matchStatus) {
         const s = (matchStatus || '').toString().trim().toLowerCase();
@@ -483,6 +1268,7 @@
     const _pollTimer = setInterval(poll, 8000);
     // Cleanup on page unload (kiosk/OBS may reload)
     window.addEventListener('beforeunload', () => clearInterval(_pollTimer));
+        window.addEventListener('resize', syncFullcardWithLiveCard);
 </script>
 </body>
 </html>
