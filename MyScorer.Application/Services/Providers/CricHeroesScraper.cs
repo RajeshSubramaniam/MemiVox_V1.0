@@ -85,7 +85,7 @@ public class CricHeroesScraper : IProviderScraper
         return Task.FromResult(new UrlValidationResult { IsValid = true, ProviderType = ProviderName, Message = "Valid CricHeroes match URL." });
     }
 
-    public async Task<LiveScoreData> ExtractAsync(string matchUrl, HttpClient httpClient)
+    public async Task<LiveScoreData> ExtractAsync(string matchUrl, HttpClient httpClient, bool includeFullScorecard = false)
     {
         var result = new LiveScoreData { ProviderType = ProviderName, MatchUrl = matchUrl };
 
@@ -129,6 +129,27 @@ public class CricHeroesScraper : IProviderScraper
             }
 
             ParseMatchData(matchData.Value, result);
+
+            if (includeFullScorecard)
+            {
+                var scorecardUrl = ToScorecardUrl(matchUrl);
+                var pageProps = await TryNextPagePropsApi(scorecardUrl, httpClient);
+                if (pageProps == null)
+                {
+                    pageProps = await TryPageScrapePageProps(scorecardUrl, httpClient);
+                }
+
+                if (pageProps != null)
+                {
+                    ParseFullScorecard(pageProps.Value, result);
+                }
+
+                if (!result.IsFullScorecardAvailable)
+                {
+                    result.FullScorecardNote = "Detailed scorecard unavailable for this CricHeroes match state.";
+                }
+            }
+
             result.IsValid = !string.IsNullOrWhiteSpace(result.TeamA);
             result.ScrapedAt = DateTime.UtcNow;
         }
@@ -442,6 +463,111 @@ public class CricHeroesScraper : IProviderScraper
         }
     }
 
+    private async Task<JsonElement?> TryNextPagePropsApi(string scorecardUrl, HttpClient httpClient)
+    {
+        try
+        {
+            var uri = new Uri(scorecardUrl);
+            var pathParts = uri.AbsolutePath.Trim('/').Split('/');
+            if (pathParts.Length < 3 || !pathParts[0].Equals("scorecard", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var pathSegment = string.Join("/", pathParts);
+
+            var buildId = _cachedBuildId;
+            if (!string.IsNullOrWhiteSpace(buildId))
+            {
+                var result = await FetchNextPageProps(buildId, pathSegment, scorecardUrl, httpClient);
+                if (result != null)
+                    return result;
+
+                var newBuildId = _cachedBuildId;
+                if (!string.IsNullOrWhiteSpace(newBuildId) && newBuildId != buildId)
+                {
+                    result = await FetchNextPageProps(newBuildId, pathSegment, scorecardUrl, httpClient);
+                    if (result != null)
+                        return result;
+                }
+            }
+
+            var probeDiscovered = await ProbeNextJsBuildId(httpClient);
+            if (!string.IsNullOrWhiteSpace(probeDiscovered) && probeDiscovered != buildId)
+            {
+                _cachedBuildId = probeDiscovered;
+                var result = await FetchNextPageProps(probeDiscovered, pathSegment, scorecardUrl, httpClient);
+                if (result != null)
+                    return result;
+            }
+
+            var staleBuildId = buildId;
+            buildId = await DiscoverBuildId(scorecardUrl, httpClient, staleBuildId);
+            if (string.IsNullOrWhiteSpace(buildId))
+                return null;
+
+            return await FetchNextPageProps(buildId, pathSegment, scorecardUrl, httpClient);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<JsonElement?> FetchNextPageProps(string buildId, string pathSegment, string refererUrl, HttpClient httpClient)
+    {
+        var apiUrl = $"https://cricheroes.com/_next/data/{buildId}/{pathSegment}.json";
+        var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+        request.Headers.Add("Accept", "application/json");
+        request.Headers.Add("x-nextjs-data", "1");
+        request.Headers.Add("Referer", refererUrl);
+
+        var response = await _nextDataClient.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+
+        if (!content.TrimStart().StartsWith("{"))
+        {
+            var discovered = ExtractBuildIdFromResponse(content);
+            if (!string.IsNullOrWhiteSpace(discovered) && discovered != buildId)
+                _cachedBuildId = discovered;
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("pageProps", out var pageProps))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<JsonElement>(pageProps.GetRawText());
+    }
+
+    private static async Task<JsonElement?> TryPageScrapePageProps(string scorecardUrl, HttpClient httpClient)
+    {
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, scorecardUrl);
+            request.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+            request.Headers.Add("Accept-Encoding", "gzip, deflate, br");
+            request.Headers.Add("Cache-Control", "no-cache");
+            request.Headers.Add("Sec-Fetch-Dest", "document");
+            request.Headers.Add("Sec-Fetch-Mode", "navigate");
+            request.Headers.Add("Sec-Fetch-Site", "none");
+            request.Headers.Add("Sec-Fetch-User", "?1");
+            request.Headers.Add("Upgrade-Insecure-Requests", "1");
+
+            var response = await httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var html = await response.Content.ReadAsStringAsync();
+            return ExtractNextPageProps(html);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Extract the miniScorecard.data JSON element from the __NEXT_DATA__ script tag.
     /// </summary>
@@ -470,6 +596,127 @@ public class CricHeroesScraper : IProviderScraper
         }
 
         return null;
+    }
+
+    private static JsonElement? ExtractNextPageProps(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var scriptNode = doc.DocumentNode.SelectSingleNode("//script[@id='__NEXT_DATA__']");
+        if (scriptNode == null) return null;
+
+        var json = scriptNode.InnerText;
+        if (string.IsNullOrWhiteSpace(json)) return null;
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        if (root.TryGetProperty("props", out var props) &&
+            props.TryGetProperty("pageProps", out var pageProps))
+        {
+            return JsonSerializer.Deserialize<JsonElement>(pageProps.GetRawText());
+        }
+
+        return null;
+    }
+
+    private static void ParseFullScorecard(JsonElement pageProps, LiveScoreData result)
+    {
+        if (!pageProps.TryGetProperty("scorecard", out var scorecard) || scorecard.ValueKind != JsonValueKind.Array)
+            return;
+
+        JsonElement? currentCard = null;
+
+        foreach (var card in scorecard.EnumerateArray())
+        {
+            var teamName = GetStringDirect(card, "teamName");
+
+            if (card.TryGetProperty("inning", out var inning))
+            {
+                result.AllInnings.Add(new InningsScoreLine
+                {
+                    TeamName = teamName,
+                    InningsLabel = GetInningsLabel(GetIntDirect(inning, "inning")),
+                    Runs = GetIntDirect(inning, "total_run"),
+                    Wickets = GetIntDirect(inning, "total_wicket"),
+                    Overs = GetStringDirect(inning, "overs_played"),
+                    ClosureStatus = GetIntDirect(inning, "is_allout") == 1 ? "ALL_OUT" : string.Empty
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.BattingTeam) &&
+                string.Equals(teamName?.Trim(), result.BattingTeam.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                currentCard = card;
+            }
+        }
+
+        if (currentCard == null)
+        {
+            // Fallback: use the latest innings card
+            var latestInning = -1;
+            foreach (var card in scorecard.EnumerateArray())
+            {
+                if (card.TryGetProperty("inning", out var inning))
+                {
+                    var inningNo = GetIntDirect(inning, "inning");
+                    if (inningNo > latestInning)
+                    {
+                        latestInning = inningNo;
+                        currentCard = card;
+                    }
+                }
+            }
+        }
+
+        if (currentCard == null)
+            return;
+
+        if (currentCard.Value.TryGetProperty("batting", out var batting) && batting.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var batter in batting.EnumerateArray())
+            {
+                result.BattersBatted.Add(new BattingCardEntry
+                {
+                    Name = GetStringDirect(batter, "name"),
+                    Runs = GetIntDirect(batter, "runs"),
+                    Balls = GetIntDirect(batter, "balls"),
+                    Status = GetStringDirect(batter, "how_to_out")
+                });
+            }
+        }
+
+        if (currentCard.Value.TryGetProperty("to_be_bat", out var toBeBat) && toBeBat.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var batter in toBeBat.EnumerateArray())
+            {
+                result.BattersYetToBat.Add(new BattingCardEntry
+                {
+                    Name = GetStringDirect(batter, "name"),
+                    Status = "YET_TO_BAT"
+                });
+            }
+        }
+
+        if (currentCard.Value.TryGetProperty("bowling", out var bowling) && bowling.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var bowler in bowling.EnumerateArray())
+            {
+                result.BowlersBowled.Add(new BowlingCardEntry
+                {
+                    Name = GetStringDirect(bowler, "name"),
+                    Overs = GetStringDirect(bowler, "overs"),
+                    Maidens = GetIntDirect(bowler, "maidens"),
+                    Runs = GetIntDirect(bowler, "runs"),
+                    Wickets = GetIntDirect(bowler, "wickets")
+                });
+            }
+        }
+
+        result.IsFullScorecardAvailable = result.BattersBatted.Count > 0 ||
+                                          result.BattersYetToBat.Count > 0 ||
+                                          result.BowlersBowled.Count > 0;
     }
 
     /// <summary>
@@ -669,6 +916,40 @@ public class CricHeroesScraper : IProviderScraper
         }
 
         return url;
+    }
+
+    private static string ToScorecardUrl(string url)
+    {
+        if (url.EndsWith("/live", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/summary", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/commentary", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/analysis", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/teams", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/gallery", StringComparison.OrdinalIgnoreCase))
+        {
+            var lastSlash = url.LastIndexOf('/');
+            if (lastSlash > 0)
+            {
+                return url[..lastSlash] + "/scorecard";
+            }
+        }
+
+        if (!url.EndsWith("/scorecard", StringComparison.OrdinalIgnoreCase))
+            return url.TrimEnd('/') + "/scorecard";
+
+        return url;
+    }
+
+    private static string GetInningsLabel(int inningNo)
+    {
+        return inningNo switch
+        {
+            1 => "1st Innings",
+            2 => "2nd Innings",
+            3 => "3rd Innings",
+            4 => "4th Innings",
+            _ => $"Innings {inningNo}"
+        };
     }
 
     private static string CapFirst(string s) =>
