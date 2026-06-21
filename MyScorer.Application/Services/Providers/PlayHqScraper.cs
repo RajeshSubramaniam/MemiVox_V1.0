@@ -112,7 +112,7 @@ query($gameId: ID!) {
         return Task.FromResult(new UrlValidationResult { IsValid = true, ProviderType = ProviderName, Message = $"Valid PlayHQ match URL (tenant: {tenant}, gameId: {gameId})." });
     }
 
-    public async Task<LiveScoreData> ExtractAsync(string matchUrl, HttpClient httpClient)
+    public async Task<LiveScoreData> ExtractAsync(string matchUrl, HttpClient httpClient, bool includeFullScorecard = false)
     {
         var result = new LiveScoreData { ProviderType = ProviderName, MatchUrl = matchUrl };
 
@@ -162,7 +162,7 @@ query($gameId: ID!) {
                 return result;
             }
 
-            ParseGameData(game, result);
+            ParseGameData(game, result, includeFullScorecard);
             result.IsValid = !string.IsNullOrWhiteSpace(result.TeamA);
             result.ScrapedAt = DateTime.UtcNow;
 
@@ -175,19 +175,44 @@ query($gameId: ID!) {
                 tenantLabel = labelEl.GetString();
             }
 
-            // For live matches, the main API never returns score data — spectator is the expected path
-            if (result.MatchStatus == "Live" && result.Runs == 0 && result.Wickets == 0
-                && string.IsNullOrWhiteSpace(result.TeamASummary) && _spectatorService != null)
+            // For live matches, spectator WebSocket is usually richer than discoverGame.
+            // In full-scorecard mode, always try spectator to pull player-card details.
+            var shouldUseSpectator = _spectatorService != null && result.MatchStatus == "Live" &&
+                (includeFullScorecard ||
+                 (result.Runs == 0 && result.Wickets == 0 && string.IsNullOrWhiteSpace(result.TeamASummary)));
+
+            if (shouldUseSpectator)
             {
                 Console.WriteLine($"[PlayHQ] Live match — fetching scores via spectator for game {gameId} (tenant: {tenantLabel})");
                 try
                 {
                     var spectatorResult = await _spectatorService.ExtractLiveScoreAsync(
-                        matchUrl, gameId!, result.TeamA, result.TeamB, tenantLabel);
+                        matchUrl, gameId!, result.TeamA, result.TeamB, tenantLabel, includeFullScorecard);
                     if (spectatorResult != null && spectatorResult.IsValid)
                     {
                         Console.WriteLine($"[PlayHQ] Spectator succeeded: {spectatorResult.Runs}/{spectatorResult.Wickets} ({spectatorResult.Overs} ov)");
                         spectatorResult.SetupId = result.SetupId;
+
+                        // If this is a fullcard request and spectator has no extended details,
+                        // fall back to discoverGame parse if that has more card data.
+                        if (includeFullScorecard)
+                        {
+                            var spectatorHasFull = spectatorResult.IsFullScorecardAvailable ||
+                                spectatorResult.AllInnings.Count > 0 ||
+                                spectatorResult.BattersBatted.Count > 0 ||
+                                spectatorResult.BattersYetToBat.Count > 0 ||
+                                spectatorResult.BowlersBowled.Count > 0;
+
+                            var apiHasFull = result.IsFullScorecardAvailable ||
+                                result.AllInnings.Count > 0 ||
+                                result.BattersBatted.Count > 0 ||
+                                result.BattersYetToBat.Count > 0 ||
+                                result.BowlersBowled.Count > 0;
+
+                            if (!spectatorHasFull && apiHasFull)
+                                return result;
+                        }
+
                         return spectatorResult;
                     }
                 }
@@ -196,10 +221,13 @@ query($gameId: ID!) {
                     Console.WriteLine($"[PlayHQ] Spectator error: {specEx.Message}");
                 }
 
-                // Spectator failed — don't show a broken 0/0 scoreboard, show loading state instead
-                Console.WriteLine($"[PlayHQ] Spectator unavailable — returning loading state");
-                result.IsValid = false;
-                result.ErrorMessage = $"{result.TeamA} vs {result.TeamB} — Loading live scores...";
+                // For normal live polling, fall back to discoverGame parse rather than
+                // forcing a loading state. This avoids blanking the overlay if spectator
+                // data is temporarily unavailable or changes shape.
+                if (!includeFullScorecard)
+                {
+                    Console.WriteLine($"[PlayHQ] Spectator unavailable — falling back to discoverGame result");
+                }
             }
         }
         catch (Exception ex)
@@ -245,7 +273,7 @@ query($gameId: ID!) {
         return (tenant, gameId);
     }
 
-    private static void ParseGameData(JsonElement game, LiveScoreData result)
+    private static void ParseGameData(JsonElement game, LiveScoreData result, bool includeFullScorecard)
     {
         // Teams
         if (game.TryGetProperty("home", out var home))
@@ -268,14 +296,14 @@ query($gameId: ID!) {
 
         // Result and scores (null for scheduled/upcoming matches)
         if (game.TryGetProperty("result", out var resultEl) && resultEl.ValueKind == JsonValueKind.Object)
-            ParseResult(resultEl, result);
+            ParseResult(resultEl, result, includeFullScorecard);
 
         // Player statistics (batting/bowling) — null for scheduled matches
         if (game.TryGetProperty("statistics", out var stats) && stats.ValueKind == JsonValueKind.Object)
-            ParsePlayerStats(stats, result);
+            ParsePlayerStats(stats, result, includeFullScorecard);
     }
 
-    private static void ParseResult(JsonElement resultEl, LiveScoreData result)
+    private static void ParseResult(JsonElement resultEl, LiveScoreData result, bool includeFullScorecard)
     {
         // Outcome description (e.g. "Win 1st Innings", "Team A won by points")
         if (resultEl.TryGetProperty("outcome", out var outcome))
@@ -319,6 +347,35 @@ query($gameId: ID!) {
 
         // Determine current batting team and set main score from latest innings
         DetermineCurrentInnings(homeInnings, awayInnings, result);
+
+        if (includeFullScorecard)
+        {
+            foreach (var inn in homeInnings)
+            {
+                result.AllInnings.Add(new InningsScoreLine
+                {
+                    TeamName = result.TeamA,
+                    InningsLabel = ToInningsLabel(inn.PeriodValue),
+                    Runs = inn.Runs,
+                    Wickets = inn.Wickets,
+                    Overs = inn.Overs,
+                    ClosureStatus = inn.ClosureStatus ?? string.Empty
+                });
+            }
+
+            foreach (var inn in awayInnings)
+            {
+                result.AllInnings.Add(new InningsScoreLine
+                {
+                    TeamName = result.TeamB,
+                    InningsLabel = ToInningsLabel(inn.PeriodValue),
+                    Runs = inn.Runs,
+                    Wickets = inn.Wickets,
+                    Overs = inn.Overs,
+                    ClosureStatus = inn.ClosureStatus ?? string.Empty
+                });
+            }
+        }
     }
 
     private record InningsData(string PeriodValue, int Runs, int Wickets, string Overs, string? ClosureStatus);
@@ -469,7 +526,7 @@ query($gameId: ID!) {
         }
     }
 
-    private static void ParsePlayerStats(JsonElement stats, LiveScoreData result)
+    private static void ParsePlayerStats(JsonElement stats, LiveScoreData result, bool includeFullScorecard)
     {
         var battingTeamIsHome = result.BattingTeam == result.TeamA;
         var battingSide = battingTeamIsHome ? "HOME" : "AWAY";
@@ -482,11 +539,14 @@ query($gameId: ID!) {
             battingTeamStats.TryGetProperty("players", out var battingPlayers))
         {
             var notOutBatsmen = new List<(string Name, int Runs, int Balls)>();
+            var battedByName = new Dictionary<string, BattingCardEntry>(StringComparer.OrdinalIgnoreCase);
+            var knownBatters = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var player in battingPlayers.EnumerateArray())
             {
                 var name = GetPlayerName(player);
                 if (string.IsNullOrWhiteSpace(name)) continue;
+                knownBatters.Add(name);
 
                 if (!player.TryGetProperty("periodStatistics", out var periodStats)) continue;
 
@@ -510,6 +570,34 @@ query($gameId: ID!) {
                         }
                         notOutBatsmen.Add((name, runs, balls));
                     }
+
+                    if (side == battingSide)
+                    {
+                        int runs = 0, balls = 0;
+                        bool hasBattingStats = false;
+
+                        if (ps.TryGetProperty("statistics", out var pStats))
+                        {
+                            foreach (var s in pStats.EnumerateArray())
+                            {
+                                var tv = GetNestedStr(s, "type", "value");
+                                var cnt = s.TryGetProperty("count", out var cv) ? (int)cv.GetDouble() : 0;
+                                if (tv == "TOTAL_RUNS") { runs = cnt; hasBattingStats = true; }
+                                else if (tv == "BALLS_FACED") { balls = cnt; hasBattingStats = true; }
+                            }
+                        }
+
+                        if (hasBattingStats)
+                        {
+                            battedByName[name] = new BattingCardEntry
+                            {
+                                Name = name,
+                                Runs = runs,
+                                Balls = balls,
+                                Status = psStatus
+                            };
+                        }
+                    }
                 }
             }
 
@@ -523,6 +611,20 @@ query($gameId: ID!) {
                 result.BatsmanNonStrike = notOutBatsmen[^2].Name;
                 result.BatsmanNonStrikeRuns = $"{notOutBatsmen[^2].Runs}({notOutBatsmen[^2].Balls})";
             }
+
+            if (includeFullScorecard)
+            {
+                result.BattersBatted = battedByName.Values
+                    .OrderByDescending(x => x.Runs)
+                    .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                result.BattersYetToBat = knownBatters
+                    .Where(name => !battedByName.ContainsKey(name))
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .Select(name => new BattingCardEntry { Name = name, Status = "YET_TO_BAT" })
+                    .ToList();
+            }
         }
 
         // Extract bowler (last bowler with overs on the batting side)
@@ -532,6 +634,7 @@ query($gameId: ID!) {
             string? lastBowlerName = null;
             int bowlerRuns = 0, bowlerWickets = 0;
             double bowlerOvers = 0;
+            var bowlersByName = new Dictionary<string, BowlingCardEntry>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var player in bowlingPlayers.EnumerateArray())
             {
@@ -568,6 +671,15 @@ query($gameId: ID!) {
                             bowlerRuns = bRuns;
                             bowlerWickets = bWickets;
                             bowlerOvers = bOvers;
+
+                            bowlersByName[name] = new BowlingCardEntry
+                            {
+                                Name = name,
+                                Overs = bOvers.ToString(),
+                                Maidens = 0,
+                                Runs = bRuns,
+                                Wickets = bWickets
+                            };
                         }
                     }
                 }
@@ -578,7 +690,42 @@ query($gameId: ID!) {
                 result.CurrentBowler = lastBowlerName;
                 result.CurrentBowlerFigures = $"{bowlerWickets}/{bowlerRuns} ({bowlerOvers} ov)";
             }
+
+            if (includeFullScorecard)
+            {
+                result.BowlersBowled = bowlersByName.Values
+                    .OrderByDescending(x => x.Wickets)
+                    .ThenBy(x => x.Runs)
+                    .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
         }
+
+        if (includeFullScorecard)
+        {
+            var hasAnyFullcardData = result.AllInnings.Count > 0 ||
+                                     result.BattersBatted.Count > 0 ||
+                                     result.BattersYetToBat.Count > 0 ||
+                                     result.BowlersBowled.Count > 0;
+
+            result.IsFullScorecardAvailable = hasAnyFullcardData;
+            if (!hasAnyFullcardData && string.IsNullOrWhiteSpace(result.FullScorecardNote))
+            {
+                result.FullScorecardNote = "PlayHQ has not published scorecard details for this match state yet.";
+            }
+        }
+    }
+
+    private static string ToInningsLabel(string periodValue)
+    {
+        return periodValue switch
+        {
+            "FIRST_INNINGS" => "1st Innings",
+            "SECOND_INNINGS" => "2nd Innings",
+            "THIRD_INNINGS" => "3rd Innings",
+            "FOURTH_INNINGS" => "4th Innings",
+            _ => periodValue
+        };
     }
 
     private static string GetPlayerName(JsonElement player)
