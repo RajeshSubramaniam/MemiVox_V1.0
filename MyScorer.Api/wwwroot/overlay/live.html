@@ -43,12 +43,12 @@
         .team-score-block {
             display: flex;
             align-items: baseline;
-            gap: 4px;
+            gap: 8px;
             min-width: 0;
         }
-        .batting-team { font-size: 15px; font-weight: 900; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .score-big { font-size: 33px; font-weight: 900; color: #f5b041; letter-spacing: -1px; line-height: 1; }
-        .overs { font-size: 12px; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; font-weight: 700; }
+        .batting-team { font-size: 24px; font-weight: 900; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1; }
+        .score-big { font-size: 24px; font-weight: 900; color: #f5b041; letter-spacing: -1px; line-height: 1; }
+        .overs { font-size: 18px; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; font-weight: 700; line-height: 1; margin-left: 2px; }
         .vs { font-size: 10px; color: #85929e; margin: 0; }
         .other-team { font-size: 13px; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .other-summary { font-size: 12px; color: #9ba8b4; font-weight: 700; margin-left: 2px; font-family: 'Segoe UI', Arial, sans-serif; }
@@ -566,10 +566,17 @@
             }
 
             .score-big {
-                font-size: 28px;
+                font-size: 18px;
             }
 
-            .batting-team,
+            .overs {
+                font-size: 14px;
+            }
+
+            .batting-team {
+                font-size: 18px;
+            }
+
             .other-team {
                 font-size: 12px;
             }
@@ -813,7 +820,7 @@
             // ============ END FULLCARD LOGIC ============
 
             // Row 1: Score
-            document.getElementById('battingTeam').textContent = d.battingTeam || d.teamA || '';
+            document.getElementById('battingTeam').textContent = shortenBattingTeamName(d.battingTeam || d.teamA || '');
             document.getElementById('scoreBig').textContent = d.runs + '/' + d.wickets;
             document.getElementById('oversLabel').textContent = d.overs ? '(' + d.overs + ' ov)' : '';
 
@@ -915,6 +922,17 @@
         const parts = name.trim().split(/\s+/);
         if (parts.length <= 1) return name.substring(0, 12);
         return parts[0][0] + '. ' + parts.slice(1).join(' ');
+    }
+
+    function shortenBattingTeamName(name) {
+        const value = (name || '').toString().trim();
+        if (!value) return '';
+
+        const skip = new Set(['the', 'a', 'an']);
+        const parts = value.split(/\s+/);
+        // Skip leading articles and pure numbers (e.g. "The Gujarat" → "Gujarat", "7 Star" → "Star")
+        const first = parts.find(p => !skip.has(p.toLowerCase()) && !/^\d+$/.test(p));
+        return first || parts[0] || value;
     }
 
     function showWaiting(text) {
