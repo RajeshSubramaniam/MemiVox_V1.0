@@ -144,7 +144,7 @@
         <div style="margin-bottom:12px;">
           <p class="muted" style="margin:0 0 6px;">2. In the opened CricHeroes tab, press <strong>F12</strong> → Console tab → paste this and press Enter:</p>
           <div style="position:relative;">
-            <code id="consoleSnippet" style="display:block;background:#0b1220;padding:10px;border-radius:8px;font-size:12px;word-break:break-all;cursor:pointer;border:1px solid #334155;">copy(JSON.parse(document.getElementById('__NEXT_DATA__').textContent).buildId)</code>
+            <code id="consoleSnippet" style="display:block;background:#0b1220;padding:10px;border-radius:8px;font-size:12px;word-break:break-all;cursor:pointer;border:1px solid #334155;">(() =&gt; { const nextData = document.getElementById('__NEXT_DATA__')?.textContent; if (nextData) { try { const parsed = JSON.parse(nextData); if (parsed?.buildId) return copy(parsed.buildId); } catch {} } const scriptBuildId = [...document.querySelectorAll('script[src]')].map(script =&gt; script.src.match(/\/_next\/static\/([^/]+)\//)?.[1]).find(Boolean); if (scriptBuildId) return copy(scriptBuildId); const inlineBuildId = document.documentElement.innerHTML.match(/&quot;buildId&quot;\s*:\s*&quot;([^&quot;]+)&quot;/)?.[1]; if (inlineBuildId) return copy(inlineBuildId); alert('Could not find a buildId on this page.'); })()</code>
             <button id="copySnippetBtn" style="position:absolute;top:6px;right:6px;padding:4px 10px;font-size:11px;background:#475569;">Copy</button>
           </div>
           <span class="muted">This copies the buildId to your clipboard.</span>
@@ -157,6 +157,40 @@
           <button id="applyBuildIdBtn">Apply BuildId</button>
         </div>
         <div id="buildIdStatus" class="status">Ready.</div>
+      </div>
+
+      <div class="detailBox" style="margin-top:12px;">
+        <h4 style="margin:0 0 8px;">CricHeroes Session Cookie (Self-Heal)</h4>
+        <p class="muted" style="margin:0 0 8px;">Optional safety net: paste cookie header from a verified CricHeroes browser request. Use this when CricHeroes blocks direct requests.</p>
+        <div class="row" style="align-items:center;gap:12px;margin-bottom:8px;">
+          <span style="font-size:14px;">Session:</span>
+          <span id="sessionCookieIndicator" class="pill">Checking...</span>
+          <span id="sessionCookiePreview" class="muted"></span>
+        </div>
+        <div>
+          <label>Cookie header value</label>
+          <textarea id="sessionCookieInput" placeholder="Paste full cookie header here (e.g. udid=...; cf_clearance=...; ... )" style="width:100%;min-height:90px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:10px;font-family:monospace;font-size:12px;"></textarea>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <button id="testSessionCookieBtn" style="background:#334155;">Test Session</button>
+          <button id="applySessionCookieBtn">Apply Session Cookie</button>
+          <button id="clearSessionCookieBtn" style="background:#7f1d1d;">Clear Session Cookie</button>
+        </div>
+        <div id="sessionCookieStatus" class="status">Ready.</div>
+      </div>
+
+      <div class="detailBox" style="margin-top:12px;">
+        <h4 style="margin:0 0 8px;">Active Fallback Warnings 🔔</h4>
+        <p class="muted" style="margin:0 0 8px;">Setups currently serving cached/stale score data. Typically happens when the data source becomes temporarily unavailable (Cloudflare block, network issue, session expiry, etc.).</p>
+        <div class="row" style="margin-bottom:10px;">
+          <button id="refreshWarningsBtn">Refresh Warnings</button>
+          <span class="muted" style="margin-left:8px;" id="warningsLastUpdate"></span>
+        </div>
+        <table id="fallbackWarningsTable">
+          <thead><tr><th>Setup ID</th><th>Status</th><th>Stale Age</th><th>Warning Message</th></tr></thead>
+          <tbody id="fallbackWarningsList"></tbody>
+        </table>
+        <div id="noWarningsMsg" style="padding:20px;text-align:center;color:#64748b;">No active fallback warnings. All setups are serving live data.</div>
       </div>
     </div>
 
@@ -375,6 +409,10 @@
   const currentBuildIdEl = document.getElementById('currentBuildId');
   const buildIdIndicator = document.getElementById('buildIdIndicator');
   const newBuildIdInput = document.getElementById('newBuildIdInput');
+  const sessionCookieIndicator = document.getElementById('sessionCookieIndicator');
+  const sessionCookiePreview = document.getElementById('sessionCookiePreview');
+  const sessionCookieInput = document.getElementById('sessionCookieInput');
+  const sessionCookieStatus = document.getElementById('sessionCookieStatus');
 
   async function loadBuildId() {
     try {
@@ -397,13 +435,22 @@
       return;
     }
     try {
-      // Quick probe: fetch a known _next/data path to see if buildId returns 200 vs 404
       const testUrl = '/api/admin/cricheroes-buildid/test?buildId=' + encodeURIComponent(buildId);
       const res = await fetch(testUrl, { headers: adminHeadersGet() });
       const data = await res.json();
       if (data.valid) {
         buildIdIndicator.textContent = 'Active';
         buildIdIndicator.style.background = '#065f46';
+        return;
+      }
+
+      const reason = (data.reason || '').toString();
+      if (reason === 'cloudflare_blocked') {
+        buildIdIndicator.textContent = 'Blocked';
+        buildIdIndicator.style.background = '#9a3412';
+      } else if (reason === 'app_shell_changed') {
+        buildIdIndicator.textContent = 'Changed';
+        buildIdIndicator.style.background = '#78350f';
       } else {
         buildIdIndicator.textContent = 'Stale';
         buildIdIndicator.style.background = '#7f1d1d';
@@ -411,6 +458,62 @@
     } catch {
       buildIdIndicator.textContent = 'Unknown';
       buildIdIndicator.style.background = '#78350f';
+    }
+  }
+
+  async function loadSessionCookieStatus() {
+    try {
+      const res = await fetch('/api/admin/cricheroes-session', { headers: adminHeadersGet() });
+      const data = await res.json();
+
+      if (data.configured) {
+        sessionCookieIndicator.textContent = 'Configured';
+        sessionCookieIndicator.style.background = '#065f46';
+        sessionCookiePreview.textContent = data.preview ? ('Preview: ' + data.preview) : '';
+      } else {
+        sessionCookieIndicator.textContent = 'Not Set';
+        sessionCookieIndicator.style.background = '#7f1d1d';
+        sessionCookiePreview.textContent = '';
+      }
+    } catch {
+      sessionCookieIndicator.textContent = 'Error';
+      sessionCookieIndicator.style.background = '#7f1d1d';
+      sessionCookiePreview.textContent = '';
+    }
+  }
+
+  async function testSessionCookieHealth() {
+    try {
+      const res = await fetch('/api/admin/cricheroes-session/test', { headers: adminHeadersGet() });
+      const data = await res.json();
+
+      if (data.valid) {
+        sessionCookieStatus.textContent = 'Session check passed. CricHeroes API reachable.';
+        sessionCookieIndicator.textContent = 'Healthy';
+        sessionCookieIndicator.style.background = '#065f46';
+        return;
+      }
+
+      const reason = (data.reason || '').toString();
+      if (reason === 'cloudflare_blocked') {
+        sessionCookieStatus.textContent = data.hasCookie
+          ? 'Cloudflare challenge still active. Re-verify CricHeroes and paste fresh cookie.'
+          : 'Cloudflare challenge detected and no cookie is configured.';
+        sessionCookieIndicator.textContent = 'Blocked';
+        sessionCookieIndicator.style.background = '#9a3412';
+      } else if (reason === 'network_error') {
+        sessionCookieStatus.textContent = 'Network error while testing CricHeroes session.';
+        sessionCookieIndicator.textContent = 'Unknown';
+        sessionCookieIndicator.style.background = '#78350f';
+      } else {
+        sessionCookieStatus.textContent = 'Session test failed (status ' + (data.status || 0) + ').';
+        sessionCookieIndicator.textContent = 'Unhealthy';
+        sessionCookieIndicator.style.background = '#7f1d1d';
+      }
+    } catch {
+      sessionCookieStatus.textContent = 'Failed to test session cookie health.';
+      sessionCookieIndicator.textContent = 'Error';
+      sessionCookieIndicator.style.background = '#7f1d1d';
     }
   }
 
@@ -433,9 +536,22 @@
     try {
       const res = await fetch('/api/admin/cricheroes-buildid/test?buildId=' + encodeURIComponent(buildId), { headers: adminHeadersGet() });
       const data = await res.json();
-      buildIdStatus.textContent = data.valid
-        ? 'BuildId is valid! Click "Apply BuildId" to save.'
-        : 'BuildId is invalid (returned ' + (data.status || 'error') + '). Check the value.';
+
+      if (data.valid) {
+        buildIdStatus.textContent = 'BuildId is valid. Click "Apply BuildId" to save.';
+        return;
+      }
+
+      const reason = (data.reason || '').toString();
+      if (reason === 'cloudflare_blocked') {
+        buildIdStatus.textContent = 'CricHeroes is blocking server-side requests with Cloudflare right now. BuildId updates will not help until this clears.';
+      } else if (reason === 'app_shell_changed') {
+        buildIdStatus.textContent = 'CricHeroes returned app-shell HTML instead of _next/data JSON. BuildId flow appears changed.';
+      } else if (reason === 'network_error') {
+        buildIdStatus.textContent = 'Network test failed while probing CricHeroes.';
+      } else {
+        buildIdStatus.textContent = 'BuildId is invalid/stale (status ' + (data.status || 'error') + ').';
+      }
     } catch {
       buildIdStatus.textContent = 'Test failed. Server may be unreachable.';
     }
@@ -461,10 +577,125 @@
     }
   });
 
+  document.getElementById('testSessionCookieBtn').addEventListener('click', async () => {
+    sessionCookieStatus.textContent = 'Testing session...';
+    await testSessionCookieHealth();
+  });
+
+  document.getElementById('applySessionCookieBtn').addEventListener('click', async () => {
+    const cookieHeader = sessionCookieInput.value.trim();
+    if (!cookieHeader) {
+      sessionCookieStatus.textContent = 'Paste cookie header first.';
+      return;
+    }
+
+    sessionCookieStatus.textContent = 'Applying session cookie...';
+    try {
+      const res = await fetch('/api/admin/cricheroes-session', {
+        method: 'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify({ cookieHeader })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        sessionCookieStatus.textContent = data.message || 'Failed to apply session cookie.';
+        return;
+      }
+
+      sessionCookieStatus.textContent = 'Session cookie applied.';
+      await loadSessionCookieStatus();
+      await testSessionCookieHealth();
+    } catch {
+      sessionCookieStatus.textContent = 'Failed to apply session cookie.';
+    }
+  });
+
+  document.getElementById('clearSessionCookieBtn').addEventListener('click', async () => {
+    sessionCookieStatus.textContent = 'Clearing session cookie...';
+    try {
+      const res = await fetch('/api/admin/cricheroes-session', {
+        method: 'DELETE',
+        headers: adminHeadersGet()
+      });
+      if (!res.ok) {
+        sessionCookieStatus.textContent = 'Failed to clear session cookie.';
+        return;
+      }
+
+      sessionCookieInput.value = '';
+      sessionCookieStatus.textContent = 'Session cookie cleared.';
+      await loadSessionCookieStatus();
+    } catch {
+      sessionCookieStatus.textContent = 'Failed to clear session cookie.';
+    }
+  });
+
+  // --- Fallback Warnings Monitor ---
+  async function loadFallbackWarnings() {
+    const warningsList = document.getElementById('fallbackWarningsList');
+    const noWarningsMsg = document.getElementById('noWarningsMsg');
+    const warningsLastUpdate = document.getElementById('warningsLastUpdate');
+    
+    try {
+      const res = await fetch('/api/admin/setups', { headers: adminHeadersGet() });
+      if (!res.ok) {
+        warningsList.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;">Failed to load setups.</td></tr>';
+        return;
+      }
+
+      const setups = await res.json();
+      const fallbackSetups = [];
+
+      for (const setup of setups) {
+        try {
+          const scoreRes = await fetch('/api/setup/' + encodeURIComponent(setup.setupId) + '/live-score', {
+            headers: adminHeadersGet()
+          });
+          if (scoreRes.ok) {
+            const score = await scoreRes.json();
+            if (score.isStaleFallback) {
+              fallbackSetups.push({
+                setupId: setup.setupId,
+                staleAge: score.staleAgeSeconds || 0,
+                warning: score.warningMessage || 'Serving cached data'
+              });
+            }
+          }
+        } catch {
+          // Skip errors for individual setup checks
+        }
+      }
+
+      if (fallbackSetups.length === 0) {
+        warningsList.innerHTML = '';
+        noWarningsMsg.style.display = 'block';
+      } else {
+        noWarningsMsg.style.display = 'none';
+        warningsList.innerHTML = fallbackSetups.map(setup => `
+          <tr>
+            <td><strong>${setup.setupId}</strong></td>
+            <td><span class="pill" style="background:#9a3412;">⚠ STALE</span></td>
+            <td>${setup.staleAge}s</td>
+            <td>${setup.warning}</td>
+          </tr>
+        `).join('');
+      }
+
+      const now = new Date().toLocaleTimeString();
+      warningsLastUpdate.textContent = '(Last checked: ' + now + ')';
+    } catch {
+      warningsList.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;">Error loading warnings.</td></tr>';
+    }
+  }
+
+  document.getElementById('refreshWarningsBtn').addEventListener('click', loadFallbackWarnings);
+
   loadSetups();
   loadClients();
   loadMatches();
   loadBuildId();
+  loadSessionCookieStatus();
+  loadFallbackWarnings();
   } // end initAdmin
 </script>
 </body>
