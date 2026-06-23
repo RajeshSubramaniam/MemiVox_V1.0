@@ -74,6 +74,31 @@
         }
         .status-pill.completed { background: #64748b; }
 
+        /* Warning badge for stale fallback */
+        .stale-warning-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #f59e0b;
+            color: #fff;
+            font-size: 9px;
+            font-weight: 900;
+            padding: 2px 5px;
+            border-radius: 3px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            white-space: nowrap;
+            z-index: 10;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.2);
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        .scoreboard {
+            position: relative;
+        }
+
         /* Row 2: Batsmen, Bowler, RR, Partnership, Projected */
         .row2 {
             display: flex;
@@ -616,6 +641,7 @@
 <div class="overlay-anchor">
 
 <div id="scoreboard" class="scoreboard" style="display:none;">
+    <div id="staleWarning" class="stale-warning-badge" style="display:none;">⚠ CACHE<br><span id="staleDuration" style="font-size:8px;"></span></div>
     <!-- Row 1: Batting score + current players -->
     <div class="row1">
         <div class="team-score-block">
@@ -730,13 +756,197 @@
         localStorage.removeItem(lastOversKey);
     }
 
+    // Fetch CricHeroes score data client-side from browser (bypasses server Cloudflare block)
+    async function fetchLiveScoreFromCricHeroes(matchUrl) {
+        if (!matchUrl) return null;
+        
+        try {
+            // Add mode: 'cors' to allow cross-origin requests from browser
+            const response = await fetch(matchUrl, { 
+                mode: 'cors',
+                credentials: 'omit',
+                cache: 'no-store'
+            });
+            if (!response.ok) {
+                console.log('CricHeroes response not ok:', response.status);
+                return null;
+            }
+            
+            const html = await response.text();
+            
+            // Check if we got HTML (not Cloudflare challenge or error)
+            if (html.includes('__cf_chl') || html.includes('Just a moment') || html.includes('cf-challenge')) {
+                console.log('CricHeroes returned Cloudflare challenge');
+                return null;
+            }
+            
+            // Try to extract __NEXT_DATA__ JSON
+            const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([^<]+)<\/script>/i);
+            if (nextDataMatch) {
+                try {
+                    const nextData = JSON.parse(nextDataMatch[1]);
+                    const scoreData = extractCricHeroesScoreFromNextData(nextData, matchUrl);
+                    if (scoreData && scoreData.runs >= 0) {
+                        console.log('Extracted score from __NEXT_DATA__:', scoreData);
+                        return scoreData;
+                    }
+                } catch (e) {
+                    console.log('Failed to parse __NEXT_DATA__:', e.message);
+                }
+            }
+            
+            // Fallback: parse from DOM
+            const domData = extractCricHeroesScoreFromDOM(html, matchUrl);
+            if (domData && domData.runs >= 0) {
+                console.log('Extracted score from DOM:', domData);
+                return domData;
+            }
+            
+            return null;
+        } catch (e) {
+            console.error('CricHeroes fetch error:', e.message);
+            return null;
+        }
+    }
+
+    // Extract score from CricHeroes __NEXT_DATA__ JSON
+    function extractCricHeroesScoreFromNextData(nextData, matchUrl) {
+        try {
+            const props = nextData?.props?.pageProps;
+            if (!props) return null;
+            
+            const match = props.match || props.matchDetail || props.scorecard;
+            if (!match) return null;
+            
+            // Extract run rate if available
+            const rrText = (match.runRate || match.currentRunRate || '0.00').toString();
+            const runRate = rrText.includes('/') ? '' : rrText;
+            
+            return {
+                isValid: true,
+                providerType: 'CricHeroes',
+                battingTeam: match.battingTeamName || match.battingTeam || '',
+                teamA: match.team1Name || match.teamA || '',
+                teamB: match.team2Name || match.teamB || '',
+                runs: parseInt(match.runs || match.currentRuns || 0),
+                wickets: parseInt(match.wickets || match.currentWickets || 0),
+                overs: (match.overs || match.currentOvers || '0.0').toString(),
+                batsmanOnStrike: match.strikerName || match.batsmanOnStrike || '',
+                batsmanOnStrikeRuns: (match.strikerRuns || match.batsmanOnStrikeRuns || '').toString(),
+                batsmanNonStrike: match.nonStrikerName || match.batsmanNonStrike || '',
+                batsmanNonStrikeRuns: (match.nonStrikerRuns || match.batsmanNonStrikeRuns || '').toString(),
+                currentBowler: match.bowlerName || match.currentBowler || '',
+                currentBowlerFigures: (match.bowlerStats || match.currentBowlerFigures || '').toString(),
+                currentPartnership: (match.partnershipRuns || match.currentPartnership || '').toString(),
+                runRate: runRate,
+                target: (match.target || '').toString(),
+                matchStatus: match.status || 'LIVE',
+                teamASummary: (match.team1Summary || match.teamASummary || '').toString(),
+                teamBSummary: (match.team2Summary || match.teamBSummary || '').toString(),
+                matchUrl: matchUrl
+            };
+        } catch (e) {
+            console.error('Error extracting from __NEXT_DATA__:', e.message);
+            return null;
+        }
+    }
+
+    // Extract score from CricHeroes DOM (fallback)
+    function extractCricHeroesScoreFromDOM(html, matchUrl) {
+        try {
+            // Look for score pattern: 123/4
+            const scoreMatch = html.match(/>(\d+)\/(\d+)\s*\(/);
+            if (!scoreMatch) {
+                console.log('Could not find score pattern in DOM');
+                return null;
+            }
+            
+            const runs = parseInt(scoreMatch[1], 10);
+            const wickets = parseInt(scoreMatch[2], 10);
+            
+            // Extract team names if available
+            let battingTeam = '';
+            const teamMatch = html.match(/class="[^"]*team[^"]*"\s*>\s*([^<]+)</i);
+            if (teamMatch) {
+                battingTeam = teamMatch[1].trim();
+            }
+            
+            return {
+                isValid: true,
+                providerType: 'CricHeroes',
+                battingTeam: battingTeam,
+                teamA: battingTeam,
+                teamB: '',
+                runs: runs,
+                wickets: wickets,
+                overs: extractOversFromDOM(html),
+                batsmanOnStrike: '',
+                batsmanNonStrike: '',
+                currentBowler: '',
+                matchStatus: 'LIVE',
+                matchUrl: matchUrl
+            };
+        } catch (e) {
+            console.error('Error extracting from DOM:', e.message);
+            return null;
+        }
+    }
+
+    function extractOversFromDOM(html) {
+        const oversMatch = html.match(/(\d+)\.(\d+)\s*(?:ov|over)/i);
+        if (oversMatch) {
+            return `${oversMatch[1]}.${oversMatch[2]}`;
+        }
+        return '0.0';
+    }
+
     async function poll() {
         if (pollInFlight) return;
         pollInFlight = true;
         try {
+            // Try backend API first
             const res = await fetch('/api/setup/' + encodeURIComponent(setupId) + '/live-score');
-            if (!res.ok) { showWaiting('Setup not found'); return; }
-            const d = await res.json();
+            let d = null;
+            
+            if (res.ok) {
+                d = await res.json();
+            } else if (res.status === 404) {
+                showWaiting('Setup not found');
+                return;
+            }
+            
+            // If backend failed or returned error, try client-side CricHeroes fetch
+            if (!d || (!d.isValid && d.errorMessage)) {
+                // Try to get matchUrl from: (1) current response, (2) localStorage cache
+                const matchUrlForFallback = (d && d.matchUrl) || localStorage.getItem(lastMatchUrlKey);
+                if (matchUrlForFallback && matchUrlForFallback.includes('cricheroes.com')) {
+                    console.log('Backend fetch failed, trying client-side CricHeroes fetch:', matchUrlForFallback);
+                    const cricherHeroesData = await fetchLiveScoreFromCricHeroes(matchUrlForFallback);
+                    if (cricherHeroesData) {
+                        // Use CricHeroes data from client-side fetch
+                        console.log('Client-side CricHeroes fetch succeeded');
+                        d = cricherHeroesData;
+                    } else {
+                        // Client-side fetch also failed
+                        console.log('Client-side CricHeroes fetch failed');
+                        if (d && d.errorMessage) {
+                            showWaiting(d.errorMessage);
+                        } else {
+                            showWaiting('Unable to fetch match data from CricHeroes');
+                        }
+                        return;
+                    }
+                } else if (!d || !d.isValid) {
+                    if (d && d.matchStatus === 'NoMatch') {
+                        showWaiting('No active match for ' + setupId);
+                    } else if (d && d.errorMessage) {
+                        showWaiting(d.errorMessage);
+                    } else {
+                        showWaiting('Unable to reach server');
+                    }
+                    return;
+                }
+            }
 
             if (!d.isValid && d.matchStatus === 'NoMatch') {
                 showWaiting('No active match for ' + setupId);
@@ -790,6 +1000,17 @@
 
             scoreboard.style.display = 'block';
             waitingMsg.style.display = 'none';
+
+            // Show stale fallback warning if applicable
+            const staleWarning = document.getElementById('staleWarning');
+            if (d.isStaleFallback) {
+                staleWarning.style.display = 'block';
+                const secs = d.staleAgeSeconds || 0;
+                document.getElementById('staleDuration').textContent = secs + 's';
+                console.log('⚠ Stale fallback active:', d.staleAgeSeconds + 's old');
+            } else {
+                staleWarning.style.display = 'none';
+            }
 
             const isCompleted = d.matchStatus && d.matchStatus.toLowerCase() === 'completed';
 
