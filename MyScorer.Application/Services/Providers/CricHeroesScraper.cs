@@ -13,17 +13,32 @@ namespace MyScorer.Application.Services.Providers;
 /// </summary>
 public class CricHeroesScraper : IProviderScraper
 {
-    // Cached Next.js buildId — starts with known-good value, auto-refreshes when stale (404)
-    private static string? _cachedBuildId = "qCElbg6YXMsFfmG1aQrwG";
+    private enum FetchFailureReason
+    {
+        None,
+        CloudflareBlocked,
+        AppShellOrContractChanged
+    }
+
+    // Cached Next.js buildId is persisted to disk so it survives app restarts.
+    private static readonly string BuildIdCachePath = Path.Combine(AppContext.BaseDirectory, "cricheroes-buildid.txt");
+    private static readonly string SessionCookieCachePath = Path.Combine(AppContext.BaseDirectory, "cricheroes-session-cookie.txt");
+    private static string? _cachedBuildId = LoadCachedBuildId();
+    private static string? _sessionCookieHeader = LoadSessionCookieHeader();
     private static readonly SemaphoreSlim _buildIdLock = new(1, 1);
 
     // Tracks whether the last FetchNextData call was redirected from /live to /summary (match ended)
     [ThreadStatic] private static bool _lastFetchWasRedirectedToSummary;
+    [ThreadStatic] private static FetchFailureReason _lastFetchFailureReason;
 
     // Dedicated HttpClient for _next/data requests — does NOT follow HTTP redirects
     // because CricHeroes returns JSON __N_REDIRECT responses that we handle manually.
     // If auto-redirect is on, the HTTP client follows 307 to the web page which gets 403 from Cloudflare.
     private static readonly HttpClient _nextDataClient = CreateNextDataClient();
+    private const string OfficialApiBase = "https://api.cricheroes.in/api/v1";
+    private const string OfficialApiKey = "cr!CkH3r0s";
+    private const string OfficialDeviceType = "Chrome: 149.0.0.0";
+    private const string OfficialUdid = "33f1796b2918055566db36fd2aa681a4";
 
     private static HttpClient CreateNextDataClient()
     {
@@ -48,9 +63,121 @@ public class CricHeroesScraper : IProviderScraper
     public static string? GetCachedBuildId() => _cachedBuildId;
 
     /// <summary>
+    /// Get the configured browser session cookie header used for CricHeroes requests.
+    /// </summary>
+    public static string? GetSessionCookieHeader() => _sessionCookieHeader;
+
+    /// <summary>
     /// Manually set the buildId (e.g. from admin UI).
     /// </summary>
-    public static void SetBuildId(string buildId) => _cachedBuildId = buildId;
+    public static void SetBuildId(string buildId)
+    {
+        _cachedBuildId = buildId;
+        PersistCachedBuildId(buildId);
+    }
+
+    /// <summary>
+    /// Set browser session cookie header (example: "cf_clearance=...; _cfuvid=...").
+    /// </summary>
+    public static void SetSessionCookieHeader(string cookieHeader)
+    {
+        _sessionCookieHeader = string.IsNullOrWhiteSpace(cookieHeader)
+            ? null
+            : cookieHeader.Trim().Replace("\r", string.Empty).Replace("\n", string.Empty);
+
+        PersistSessionCookieHeader(_sessionCookieHeader);
+    }
+
+    /// <summary>
+    /// Clear persisted session cookie header.
+    /// </summary>
+    public static void ClearSessionCookieHeader()
+    {
+        _sessionCookieHeader = null;
+        try
+        {
+            if (File.Exists(SessionCookieCachePath))
+                File.Delete(SessionCookieCachePath);
+        }
+        catch
+        {
+            // Best effort only.
+        }
+    }
+
+    private static string? LoadCachedBuildId()
+    {
+        try
+        {
+            if (!File.Exists(BuildIdCachePath))
+                return null;
+
+            var buildId = File.ReadAllText(BuildIdCachePath).Trim();
+            return string.IsNullOrWhiteSpace(buildId) ? null : buildId;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? LoadSessionCookieHeader()
+    {
+        try
+        {
+            if (!File.Exists(SessionCookieCachePath))
+                return null;
+
+            var cookieHeader = File.ReadAllText(SessionCookieCachePath).Trim();
+            return string.IsNullOrWhiteSpace(cookieHeader) ? null : cookieHeader;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void PersistCachedBuildId(string buildId)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(BuildIdCachePath) ?? AppContext.BaseDirectory);
+            File.WriteAllText(BuildIdCachePath, buildId);
+        }
+        catch
+        {
+            // Best effort only.
+        }
+    }
+
+    private static void PersistSessionCookieHeader(string? cookieHeader)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(cookieHeader))
+            {
+                if (File.Exists(SessionCookieCachePath))
+                    File.Delete(SessionCookieCachePath);
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(SessionCookieCachePath) ?? AppContext.BaseDirectory);
+            File.WriteAllText(SessionCookieCachePath, cookieHeader);
+        }
+        catch
+        {
+            // Best effort only.
+        }
+    }
+
+    private static void ApplySessionCookie(HttpRequestMessage request)
+    {
+        if (string.IsNullOrWhiteSpace(_sessionCookieHeader))
+            return;
+
+        request.Headers.Remove("Cookie");
+        request.Headers.TryAddWithoutValidation("Cookie", _sessionCookieHeader);
+    }
 
     public bool CanHandle(string matchUrl)
     {
@@ -85,17 +212,33 @@ public class CricHeroesScraper : IProviderScraper
         return Task.FromResult(new UrlValidationResult { IsValid = true, ProviderType = ProviderName, Message = "Valid CricHeroes match URL." });
     }
 
-    public async Task<LiveScoreData> ExtractAsync(string matchUrl, HttpClient httpClient)
+    public async Task<LiveScoreData> ExtractAsync(string matchUrl, HttpClient httpClient, bool includeFullScorecard = false)
     {
         var result = new LiveScoreData { ProviderType = ProviderName, MatchUrl = matchUrl };
 
         try
         {
+            _lastFetchFailureReason = FetchFailureReason.None;
             matchUrl = NormalizeLiveUrl(matchUrl);
 
+            var matchId = ExtractMatchId(matchUrl);
+            var usedOfficialApi = false;
+
+            // Strategy 0 (primary): CricHeroes official API host used by web/app clients.
+            JsonElement? matchData = null;
+            if (matchId.HasValue)
+            {
+                matchData = await TryOfficialMiniScorecardApi(matchId.Value, httpClient);
+                if (matchData != null)
+                    usedOfficialApi = true;
+            }
+
             // Strategy 1: Try CricHeroes _next/data JSON API (bypasses Cloudflare web protection)
-            _lastFetchWasRedirectedToSummary = false;
-            var matchData = await TryNextDataApi(matchUrl, httpClient);
+            if (matchData == null)
+            {
+                _lastFetchWasRedirectedToSummary = false;
+                matchData = await TryNextDataApi(matchUrl, httpClient);
+            }
 
             // If /live was redirected to /summary, the match has completed
             if (matchData != null && _lastFetchWasRedirectedToSummary)
@@ -124,11 +267,51 @@ public class CricHeroesScraper : IProviderScraper
 
             if (matchData == null)
             {
-                result.ErrorMessage = "Unable to fetch score data from CricHeroes. The cached buildId may be stale — try updating it via POST /api/admin/cricheroes-buildid.";
+                result.ErrorMessage = _lastFetchFailureReason switch
+                {
+                    FetchFailureReason.CloudflareBlocked =>
+                        "Unable to fetch score data from CricHeroes. CricHeroes is returning a Cloudflare challenge page to server-side requests right now, so buildId updates will not help until access is restored.",
+                    FetchFailureReason.AppShellOrContractChanged =>
+                        "Unable to fetch score data from CricHeroes. CricHeroes is returning an HTML app-shell/404 response for _next/data instead of JSON, so the old buildId-based endpoint appears to have changed.",
+                    _ =>
+                        "Unable to fetch score data from CricHeroes. The cached buildId may be stale — try updating it via POST /api/admin/cricheroes-buildid."
+                };
                 return result;
             }
 
             ParseMatchData(matchData.Value, result);
+
+            if (includeFullScorecard)
+            {
+                if (usedOfficialApi && matchId.HasValue)
+                {
+                    var officialScorecardData = await TryOfficialScorecardApi(matchId.Value, httpClient);
+                    if (officialScorecardData != null)
+                    {
+                        ParseOfficialFullScorecard(officialScorecardData.Value, result);
+                    }
+                }
+                else
+                {
+                    var scorecardUrl = ToScorecardUrl(matchUrl);
+                    var pageProps = await TryNextPagePropsApi(scorecardUrl, httpClient);
+                    if (pageProps == null)
+                    {
+                        pageProps = await TryPageScrapePageProps(scorecardUrl, httpClient);
+                    }
+
+                    if (pageProps != null)
+                    {
+                        ParseFullScorecard(pageProps.Value, result);
+                    }
+                }
+
+                if (!result.IsFullScorecardAvailable)
+                {
+                    result.FullScorecardNote = "Detailed scorecard unavailable for this CricHeroes match state.";
+                }
+            }
+
             result.IsValid = !string.IsNullOrWhiteSpace(result.TeamA);
             result.ScrapedAt = DateTime.UtcNow;
         }
@@ -138,6 +321,90 @@ public class CricHeroesScraper : IProviderScraper
         }
 
         return result;
+    }
+
+    private static int? ExtractMatchId(string matchUrl)
+    {
+        if (string.IsNullOrWhiteSpace(matchUrl))
+            return null;
+
+        var m = Regex.Match(matchUrl, @"/scorecard/(\d+)", RegexOptions.IgnoreCase);
+        if (!m.Success)
+            return null;
+
+        return int.TryParse(m.Groups[1].Value, out var id) ? id : null;
+    }
+
+    private static void ApplyOfficialApiHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("Accept", "application/json, text/plain, */*");
+        request.Headers.Add("api-key", OfficialApiKey);
+        request.Headers.Add("device-type", OfficialDeviceType);
+        request.Headers.Add("origin", "https://cricheroes.com");
+        request.Headers.Add("referer", "https://cricheroes.com/");
+        request.Headers.Add("udid", OfficialUdid);
+    }
+
+    private static async Task<JsonElement?> TryOfficialMiniScorecardApi(int matchId, HttpClient httpClient)
+    {
+        try
+        {
+            var url = $"{OfficialApiBase}/scorecard/get-mini-scorecard/{matchId}";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            ApplyOfficialApiHeaders(request);
+            ApplySessionCookie(request);
+
+            var response = await httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+
+            if (!root.TryGetProperty("status", out var status) || status.ValueKind != JsonValueKind.True)
+                return null;
+
+            if (!root.TryGetProperty("data", out var data))
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(data.GetRawText());
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<JsonElement?> TryOfficialScorecardApi(int matchId, HttpClient httpClient)
+    {
+        try
+        {
+            var url = $"{OfficialApiBase}/scorecard/get-scorecard/{matchId}";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            ApplyOfficialApiHeaders(request);
+            ApplySessionCookie(request);
+
+            var response = await httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var content = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+
+            if (!root.TryGetProperty("status", out var status) || status.ValueKind != JsonValueKind.True)
+                return null;
+
+            if (!root.TryGetProperty("data", out var data))
+                return null;
+
+            return JsonSerializer.Deserialize<JsonElement>(data.GetRawText());
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -183,7 +450,7 @@ public class CricHeroesScraper : IProviderScraper
             if (!string.IsNullOrWhiteSpace(probeDiscovered) && probeDiscovered != buildId)
             {
                 Console.WriteLine($"[CricHeroes] Probe discovered buildId: {probeDiscovered}");
-                _cachedBuildId = probeDiscovered;
+                SetBuildId(probeDiscovered);
                 var result = await FetchNextData(probeDiscovered, pathSegment, matchUrl, httpClient);
                 if (result != null)
                     return result;
@@ -218,6 +485,7 @@ public class CricHeroesScraper : IProviderScraper
         request.Headers.Add("Accept", "application/json");
         request.Headers.Add("x-nextjs-data", "1");
         request.Headers.Add("Referer", matchUrl);
+        ApplySessionCookie(request);
 
         var response = await _nextDataClient.SendAsync(request);
         var content = await response.Content.ReadAsStringAsync();
@@ -227,22 +495,24 @@ public class CricHeroesScraper : IProviderScraper
         var finalUrl = response.RequestMessage?.RequestUri?.ToString() ?? "";
         if (!finalUrl.Contains("/_next/data/") && !content.TrimStart().StartsWith("{"))
         {
+            MarkFailureReasonFromHtml(content);
             // We were auto-redirected away from the API — the buildId is likely still valid
             // but the HTTP redirect went to a Cloudflare-blocked page.
             // Try to extract buildId from any HTML we got back.
             var discovered = ExtractBuildIdFromResponse(content);
             if (!string.IsNullOrWhiteSpace(discovered) && discovered != buildId)
-                _cachedBuildId = discovered;
+                SetBuildId(discovered);
             return null;
         }
 
         // Not JSON at all — likely Cloudflare challenge or error page
         if (!content.TrimStart().StartsWith("{"))
         {
+            MarkFailureReasonFromHtml(content);
             // Try to extract buildId from error page HTML (404 page contains the real buildId)
             var discovered = ExtractBuildIdFromResponse(content);
             if (!string.IsNullOrWhiteSpace(discovered) && discovered != buildId)
-                _cachedBuildId = discovered;
+                SetBuildId(discovered);
             // Don't null _cachedBuildId — keep old value so future requests can auto-heal
             return null;
         }
@@ -259,11 +529,14 @@ public class CricHeroesScraper : IProviderScraper
             {
                 var discoveryRequest = new HttpRequestMessage(HttpMethod.Get, apiUrl);
                 discoveryRequest.Headers.Add("Accept", "text/html");
+                discoveryRequest.Headers.Add("Referer", matchUrl);
+                ApplySessionCookie(discoveryRequest);
                 var discoveryResponse = await _nextDataClient.SendAsync(discoveryRequest);
                 var discoveryContent = await discoveryResponse.Content.ReadAsStringAsync();
+                MarkFailureReasonFromHtml(discoveryContent);
                 var discovered = ExtractBuildIdFromResponse(discoveryContent);
                 if (!string.IsNullOrWhiteSpace(discovered) && discovered != buildId)
-                    _cachedBuildId = discovered;
+                    SetBuildId(discovered);
             }
             catch { /* best-effort discovery */ }
             return null;
@@ -302,12 +575,40 @@ public class CricHeroesScraper : IProviderScraper
 
     /// <summary>
     /// Extract buildId from any CricHeroes response HTML (e.g. 404 error page).
-    /// The 404 page embeds __NEXT_DATA__ with the current buildId.
+    /// CricHeroes may expose it through __NEXT_DATA__, script URLs, or inline JSON.
     /// </summary>
     private static string? ExtractBuildIdFromResponse(string content)
     {
-        var match = Regex.Match(content, @"""buildId""\s*:\s*""([^""]+)""");
-        return match.Success ? match.Groups[1].Value : null;
+        if (string.IsNullOrWhiteSpace(content))
+            return null;
+
+        var buildIdMatch = Regex.Match(content, "\"buildId\"\\s*:\\s*\"([^\"]+)\"");
+        if (buildIdMatch.Success)
+            return buildIdMatch.Groups[1].Value;
+
+        var manifestMatch = Regex.Match(content, @"/_next/static/([^/]+)/(?:_buildManifest|_ssgManifest)\.js");
+        if (manifestMatch.Success)
+            return manifestMatch.Groups[1].Value;
+
+        return null;
+    }
+
+    private static void MarkFailureReasonFromHtml(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return;
+
+        var lower = content.ToLowerInvariant();
+        if (lower.Contains("__cf_chl") || lower.Contains("just a moment") || lower.Contains("cf-challenge"))
+        {
+            _lastFetchFailureReason = FetchFailureReason.CloudflareBlocked;
+            return;
+        }
+
+        if (lower.Contains("next.cricheroes.com/_next/static/chunks/") || lower.Contains("bailout_to_client_side_rendering") || lower.Contains("self.__next_f"))
+        {
+            _lastFetchFailureReason = FetchFailureReason.AppShellOrContractChanged;
+        }
     }
 
     /// <summary>
@@ -324,6 +625,7 @@ public class CricHeroesScraper : IProviderScraper
             var request = new HttpRequestMessage(HttpMethod.Get, probeUrl);
             request.Headers.Add("Accept", "text/html,application/json");
             // No x-nextjs-data header — we want the 404 HTML page, not JSON
+            ApplySessionCookie(request);
 
             var response = await _nextDataClient.SendAsync(request);
             var content = await response.Content.ReadAsStringAsync();
@@ -365,7 +667,7 @@ public class CricHeroesScraper : IProviderScraper
                 if (!string.IsNullOrWhiteSpace(discovered) && discovered != knownStaleBuildId)
                 {
                     Console.WriteLine($"[CricHeroes] Discovered new buildId: {discovered} (from {probeUrl})");
-                    _cachedBuildId = discovered;
+                    SetBuildId(discovered);
                     return discovered;
                 }
             }
@@ -393,19 +695,16 @@ public class CricHeroesScraper : IProviderScraper
             request.Headers.Add("Sec-Fetch-Site", "none");
             request.Headers.Add("Sec-Fetch-User", "?1");
             request.Headers.Add("Upgrade-Insecure-Requests", "1");
+            ApplySessionCookie(request);
 
             var response = await httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return null;
 
             var html = await response.Content.ReadAsStringAsync();
 
-            // Try buildId from __NEXT_DATA__ JSON
-            var buildIdMatch = Regex.Match(html, @"""buildId""\s*:\s*""([^""]+)""");
-            if (buildIdMatch.Success) return buildIdMatch.Groups[1].Value;
-
-            // Try from _buildManifest.js script URL
-            var manifestMatch = Regex.Match(html, @"/_next/static/([^/]+)/_buildManifest\.js");
-            if (manifestMatch.Success) return manifestMatch.Groups[1].Value;
+            var discovered = ExtractBuildIdFromResponse(html);
+            if (!string.IsNullOrWhiteSpace(discovered))
+                return discovered;
         }
         catch { }
 
@@ -428,13 +727,124 @@ public class CricHeroesScraper : IProviderScraper
             request.Headers.Add("Sec-Fetch-Site", "none");
             request.Headers.Add("Sec-Fetch-User", "?1");
             request.Headers.Add("Upgrade-Insecure-Requests", "1");
+            ApplySessionCookie(request);
 
             var response = await httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
                 return null;
 
             var html = await response.Content.ReadAsStringAsync();
+            MarkFailureReasonFromHtml(html);
             return ExtractNextData(html);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<JsonElement?> TryNextPagePropsApi(string scorecardUrl, HttpClient httpClient)
+    {
+        try
+        {
+            var uri = new Uri(scorecardUrl);
+            var pathParts = uri.AbsolutePath.Trim('/').Split('/');
+            if (pathParts.Length < 3 || !pathParts[0].Equals("scorecard", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var pathSegment = string.Join("/", pathParts);
+
+            var buildId = _cachedBuildId;
+            if (!string.IsNullOrWhiteSpace(buildId))
+            {
+                var result = await FetchNextPageProps(buildId, pathSegment, scorecardUrl, httpClient);
+                if (result != null)
+                    return result;
+
+                var newBuildId = _cachedBuildId;
+                if (!string.IsNullOrWhiteSpace(newBuildId) && newBuildId != buildId)
+                {
+                    result = await FetchNextPageProps(newBuildId, pathSegment, scorecardUrl, httpClient);
+                    if (result != null)
+                        return result;
+                }
+            }
+
+            var probeDiscovered = await ProbeNextJsBuildId(httpClient);
+            if (!string.IsNullOrWhiteSpace(probeDiscovered) && probeDiscovered != buildId)
+            {
+                SetBuildId(probeDiscovered);
+                var result = await FetchNextPageProps(probeDiscovered, pathSegment, scorecardUrl, httpClient);
+                if (result != null)
+                    return result;
+            }
+
+            var staleBuildId = buildId;
+            buildId = await DiscoverBuildId(scorecardUrl, httpClient, staleBuildId);
+            if (string.IsNullOrWhiteSpace(buildId))
+                return null;
+
+            return await FetchNextPageProps(buildId, pathSegment, scorecardUrl, httpClient);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<JsonElement?> FetchNextPageProps(string buildId, string pathSegment, string refererUrl, HttpClient httpClient)
+    {
+        var apiUrl = $"https://cricheroes.com/_next/data/{buildId}/{pathSegment}.json";
+        var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+        request.Headers.Add("Accept", "application/json");
+        request.Headers.Add("x-nextjs-data", "1");
+        request.Headers.Add("Referer", refererUrl);
+        ApplySessionCookie(request);
+
+        var response = await _nextDataClient.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+
+        if (!content.TrimStart().StartsWith("{"))
+        {
+            MarkFailureReasonFromHtml(content);
+            var discovered = ExtractBuildIdFromResponse(content);
+            if (!string.IsNullOrWhiteSpace(discovered) && discovered != buildId)
+                SetBuildId(discovered);
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("pageProps", out var pageProps))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<JsonElement>(pageProps.GetRawText());
+    }
+
+    private static async Task<JsonElement?> TryPageScrapePageProps(string scorecardUrl, HttpClient httpClient)
+    {
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, scorecardUrl);
+            request.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+            request.Headers.Add("Accept-Encoding", "gzip, deflate, br");
+            request.Headers.Add("Cache-Control", "no-cache");
+            request.Headers.Add("Sec-Fetch-Dest", "document");
+            request.Headers.Add("Sec-Fetch-Mode", "navigate");
+            request.Headers.Add("Sec-Fetch-Site", "none");
+            request.Headers.Add("Sec-Fetch-User", "?1");
+            request.Headers.Add("Upgrade-Insecure-Requests", "1");
+            ApplySessionCookie(request);
+
+            var response = await httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var html = await response.Content.ReadAsStringAsync();
+            MarkFailureReasonFromHtml(html);
+            return ExtractNextPageProps(html);
         }
         catch
         {
@@ -470,6 +880,248 @@ public class CricHeroesScraper : IProviderScraper
         }
 
         return null;
+    }
+
+    private static JsonElement? ExtractNextPageProps(string html)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var scriptNode = doc.DocumentNode.SelectSingleNode("//script[@id='__NEXT_DATA__']");
+        if (scriptNode == null) return null;
+
+        var json = scriptNode.InnerText;
+        if (string.IsNullOrWhiteSpace(json)) return null;
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        if (root.TryGetProperty("props", out var props) &&
+            props.TryGetProperty("pageProps", out var pageProps))
+        {
+            return JsonSerializer.Deserialize<JsonElement>(pageProps.GetRawText());
+        }
+
+        return null;
+    }
+
+    private static void ParseFullScorecard(JsonElement pageProps, LiveScoreData result)
+    {
+        if (!pageProps.TryGetProperty("scorecard", out var scorecard) || scorecard.ValueKind != JsonValueKind.Array)
+            return;
+
+        JsonElement? currentCard = null;
+
+        foreach (var card in scorecard.EnumerateArray())
+        {
+            var teamName = GetStringDirect(card, "teamName");
+
+            if (card.TryGetProperty("inning", out var inning))
+            {
+                result.AllInnings.Add(new InningsScoreLine
+                {
+                    TeamName = teamName,
+                    InningsLabel = GetInningsLabel(GetIntDirect(inning, "inning")),
+                    Runs = GetIntDirect(inning, "total_run"),
+                    Wickets = GetIntDirect(inning, "total_wicket"),
+                    Overs = GetStringDirect(inning, "overs_played"),
+                    ClosureStatus = GetIntDirect(inning, "is_allout") == 1 ? "ALL_OUT" : string.Empty
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.BattingTeam) &&
+                string.Equals(teamName?.Trim(), result.BattingTeam.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                currentCard = card;
+            }
+        }
+
+        if (currentCard == null)
+        {
+            // Fallback: use the latest innings card
+            var latestInning = -1;
+            foreach (var card in scorecard.EnumerateArray())
+            {
+                if (card.TryGetProperty("inning", out var inning))
+                {
+                    var inningNo = GetIntDirect(inning, "inning");
+                    if (inningNo > latestInning)
+                    {
+                        latestInning = inningNo;
+                        currentCard = card;
+                    }
+                }
+            }
+        }
+
+        if (currentCard == null)
+            return;
+
+        if (currentCard.Value.TryGetProperty("batting", out var batting) && batting.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var batter in batting.EnumerateArray())
+            {
+                result.BattersBatted.Add(new BattingCardEntry
+                {
+                    Name = GetStringDirect(batter, "name"),
+                    Runs = GetIntDirect(batter, "runs"),
+                    Balls = GetIntDirect(batter, "balls"),
+                    Status = GetStringDirect(batter, "how_to_out")
+                });
+            }
+        }
+
+        if (currentCard.Value.TryGetProperty("to_be_bat", out var toBeBat) && toBeBat.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var batter in toBeBat.EnumerateArray())
+            {
+                result.BattersYetToBat.Add(new BattingCardEntry
+                {
+                    Name = GetStringDirect(batter, "name"),
+                    Status = "YET_TO_BAT"
+                });
+            }
+        }
+
+        if (currentCard.Value.TryGetProperty("bowling", out var bowling) && bowling.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var bowler in bowling.EnumerateArray())
+            {
+                result.BowlersBowled.Add(new BowlingCardEntry
+                {
+                    Name = GetStringDirect(bowler, "name"),
+                    Overs = GetStringDirect(bowler, "overs"),
+                    Maidens = GetIntDirect(bowler, "maidens"),
+                    Runs = GetIntDirect(bowler, "runs"),
+                    Wickets = GetIntDirect(bowler, "wickets")
+                });
+            }
+        }
+
+        result.IsFullScorecardAvailable = result.BattersBatted.Count > 0 ||
+                                          result.BattersYetToBat.Count > 0 ||
+                                          result.BowlersBowled.Count > 0;
+    }
+
+    private static void ParseOfficialFullScorecard(JsonElement data, LiveScoreData result)
+    {
+        result.AllInnings.Clear();
+        result.BattersBatted.Clear();
+        result.BattersYetToBat.Clear();
+        result.BowlersBowled.Clear();
+
+        if (data.TryGetProperty("team_a", out var teamA))
+        {
+            AddOfficialInnings(teamA, GetStringDirect(teamA, "name"), result);
+        }
+
+        if (data.TryGetProperty("team_b", out var teamB))
+        {
+            AddOfficialInnings(teamB, GetStringDirect(teamB, "name"), result);
+        }
+
+        JsonElement? battingTeam = null;
+        if (!string.IsNullOrWhiteSpace(result.BattingTeam))
+        {
+            if (data.TryGetProperty("team_a", out var ta) &&
+                string.Equals(GetStringDirect(ta, "name"), result.BattingTeam, StringComparison.OrdinalIgnoreCase))
+            {
+                battingTeam = ta;
+            }
+            else if (data.TryGetProperty("team_b", out var tb) &&
+                     string.Equals(GetStringDirect(tb, "name"), result.BattingTeam, StringComparison.OrdinalIgnoreCase))
+            {
+                battingTeam = tb;
+            }
+        }
+
+        if (battingTeam == null)
+        {
+            battingTeam = data.TryGetProperty("team_a", out var fallbackA) ? fallbackA : (JsonElement?)null;
+        }
+
+        if (battingTeam == null)
+            return;
+
+        if (!battingTeam.Value.TryGetProperty("scorecard", out var cards) || cards.ValueKind != JsonValueKind.Array || cards.GetArrayLength() == 0)
+            return;
+
+        JsonElement currentCard = cards[0];
+        var highestInning = -1;
+        foreach (var card in cards.EnumerateArray())
+        {
+            var inningNo = GetIntDirect(card, "inning");
+            if (inningNo > highestInning)
+            {
+                highestInning = inningNo;
+                currentCard = card;
+            }
+        }
+
+        if (currentCard.TryGetProperty("batting", out var batting) && batting.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var batter in batting.EnumerateArray())
+            {
+                result.BattersBatted.Add(new BattingCardEntry
+                {
+                    Name = GetStringDirect(batter, "name"),
+                    Runs = GetIntDirect(batter, "runs"),
+                    Balls = GetIntDirect(batter, "balls"),
+                    Status = GetStringDirect(batter, "how_to_out")
+                });
+            }
+        }
+
+        if (currentCard.TryGetProperty("to_be_bat", out var yetToBat) && yetToBat.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var batter in yetToBat.EnumerateArray())
+            {
+                result.BattersYetToBat.Add(new BattingCardEntry
+                {
+                    Name = GetStringDirect(batter, "name"),
+                    Status = "YET_TO_BAT"
+                });
+            }
+        }
+
+        if (currentCard.TryGetProperty("bowling", out var bowling) && bowling.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var bowler in bowling.EnumerateArray())
+            {
+                result.BowlersBowled.Add(new BowlingCardEntry
+                {
+                    Name = GetStringDirect(bowler, "name"),
+                    Overs = GetStringDirect(bowler, "overs"),
+                    Maidens = GetIntDirect(bowler, "maidens"),
+                    Runs = GetIntDirect(bowler, "runs"),
+                    Wickets = GetIntDirect(bowler, "wickets")
+                });
+            }
+        }
+
+        result.IsFullScorecardAvailable = result.BattersBatted.Count > 0 ||
+                                          result.BattersYetToBat.Count > 0 ||
+                                          result.BowlersBowled.Count > 0 ||
+                                          result.AllInnings.Count > 0;
+    }
+
+    private static void AddOfficialInnings(JsonElement team, string teamName, LiveScoreData result)
+    {
+        if (!team.TryGetProperty("innings", out var innings) || innings.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var inning in innings.EnumerateArray())
+        {
+            result.AllInnings.Add(new InningsScoreLine
+            {
+                TeamName = teamName,
+                InningsLabel = GetInningsLabel(GetIntDirect(inning, "inning")),
+                Runs = GetIntDirect(inning, "total_run"),
+                Wickets = GetIntDirect(inning, "total_wicket"),
+                Overs = GetStringDirect(inning, "overs_played"),
+                ClosureStatus = GetIntDirect(inning, "is_allout") == 1 ? "ALL_OUT" : string.Empty
+            });
+        }
     }
 
     /// <summary>
@@ -669,6 +1321,40 @@ public class CricHeroesScraper : IProviderScraper
         }
 
         return url;
+    }
+
+    private static string ToScorecardUrl(string url)
+    {
+        if (url.EndsWith("/live", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/summary", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/commentary", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/analysis", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/teams", StringComparison.OrdinalIgnoreCase) ||
+            url.EndsWith("/gallery", StringComparison.OrdinalIgnoreCase))
+        {
+            var lastSlash = url.LastIndexOf('/');
+            if (lastSlash > 0)
+            {
+                return url[..lastSlash] + "/scorecard";
+            }
+        }
+
+        if (!url.EndsWith("/scorecard", StringComparison.OrdinalIgnoreCase))
+            return url.TrimEnd('/') + "/scorecard";
+
+        return url;
+    }
+
+    private static string GetInningsLabel(int inningNo)
+    {
+        return inningNo switch
+        {
+            1 => "1st Innings",
+            2 => "2nd Innings",
+            3 => "3rd Innings",
+            4 => "4th Innings",
+            _ => $"Innings {inningNo}"
+        };
     }
 
     private static string CapFirst(string s) =>

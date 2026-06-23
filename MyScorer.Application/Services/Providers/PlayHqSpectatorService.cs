@@ -88,11 +88,23 @@ subscription($id: ID!) {
   }
 }";
 
-    public async Task<LiveScoreData?> ExtractLiveScoreAsync(string matchUrl, string gameId, string teamA, string teamB, string? tenantLabel = null)
+    public async Task<LiveScoreData?> ExtractLiveScoreAsync(string matchUrl, string gameId, string teamA, string teamB, string? tenantLabel = null, bool includeFullScorecard = false)
     {
         // Check cache first
         if (_cache.TryGetValue(gameId, out var cached) && DateTime.UtcNow - cached.CachedAt < CacheDuration)
-            return cached.Data;
+        {
+            if (!includeFullScorecard)
+                return cached.Data;
+
+            var cachedHasFullcard = cached.Data.IsFullScorecardAvailable ||
+                                    cached.Data.AllInnings.Count > 0 ||
+                                    cached.Data.BattersBatted.Count > 0 ||
+                                    cached.Data.BattersYetToBat.Count > 0 ||
+                                    cached.Data.BowlersBowled.Count > 0;
+
+            if (cachedHasFullcard)
+                return cached.Data;
+        }
 
         try
         {
@@ -107,7 +119,7 @@ subscription($id: ID!) {
             }
 
             _logger.LogDebug("Got WebSocket response ({Length} chars)", responseJson.Length);
-            var result = ParseSpectatorResponse(responseJson, teamA, teamB);
+            var result = ParseSpectatorResponse(responseJson, teamA, teamB, includeFullScorecard);
             if (result != null)
             {
                 result.MatchUrl = matchUrl;
@@ -161,7 +173,9 @@ subscription($id: ID!) {
         ws.Options.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36");
 
         var uri = new Uri($"{_spectatorWsUrl}?tenant={Uri.EscapeDataString(tenant)}");
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // Keep live overlay startup responsive. If spectator is slow/unavailable,
+        // fail fast so callers can fall back instead of hanging for ~30 seconds.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
 
         _logger.LogDebug("Connecting WebSocket to {Uri}", uri);
         await ws.ConnectAsync(uri, cts.Token);
@@ -257,7 +271,7 @@ subscription($id: ID!) {
         return doc.RootElement.Clone();
     }
 
-    private static LiveScoreData? ParseSpectatorResponse(string json, string teamA, string teamB)
+    private static LiveScoreData? ParseSpectatorResponse(string json, string teamA, string teamB, bool includeFullScorecard)
     {
         try
         {
@@ -296,11 +310,22 @@ subscription($id: ID!) {
 
             // Result contains periods (innings) with scores
             if (game.TryGetProperty("result", out var resultEl) && resultEl.ValueKind == JsonValueKind.Object)
-                ParseSpectatorResult(resultEl, result);
+                ParseSpectatorResult(resultEl, result, includeFullScorecard);
 
             // Player statistics
             if (game.TryGetProperty("statistics", out var stats) && stats.ValueKind == JsonValueKind.Object)
-                ParseSpectatorPlayerStats(stats, result);
+                ParseSpectatorPlayerStats(stats, result, includeFullScorecard);
+
+            if (includeFullScorecard)
+            {
+                var hasAnyFullcardData = result.AllInnings.Count > 0 ||
+                                         result.BattersBatted.Count > 0 ||
+                                         result.BattersYetToBat.Count > 0 ||
+                                         result.BowlersBowled.Count > 0;
+                result.IsFullScorecardAvailable = hasAnyFullcardData;
+                if (!hasAnyFullcardData)
+                    result.FullScorecardNote = "PlayHQ spectator feed has limited scorecard details for this live state.";
+            }
 
             return result;
         }
@@ -310,10 +335,39 @@ subscription($id: ID!) {
         }
     }
 
-    private static void ParseSpectatorResult(JsonElement resultEl, LiveScoreData result)
+    private static void ParseSpectatorResult(JsonElement resultEl, LiveScoreData result, bool includeFullScorecard)
     {
         var homeInnings = ExtractInnings(resultEl, "home");
         var awayInnings = ExtractInnings(resultEl, "away");
+
+        if (includeFullScorecard)
+        {
+            foreach (var inn in homeInnings)
+            {
+                result.AllInnings.Add(new InningsScoreLine
+                {
+                    TeamName = result.TeamA,
+                    InningsLabel = ToInningsLabel(inn.PeriodValue),
+                    Runs = inn.Runs,
+                    Wickets = inn.Wickets,
+                    Overs = inn.Overs,
+                    ClosureStatus = inn.ClosureStatus ?? string.Empty
+                });
+            }
+
+            foreach (var inn in awayInnings)
+            {
+                result.AllInnings.Add(new InningsScoreLine
+                {
+                    TeamName = result.TeamB,
+                    InningsLabel = ToInningsLabel(inn.PeriodValue),
+                    Runs = inn.Runs,
+                    Wickets = inn.Wickets,
+                    Overs = inn.Overs,
+                    ClosureStatus = inn.ClosureStatus ?? string.Empty
+                });
+            }
+        }
 
         // Format summaries
         result.TeamASummary = FormatInnings(homeInnings);
@@ -375,7 +429,7 @@ subscription($id: ID!) {
         }
     }
 
-    private static void ParseSpectatorPlayerStats(JsonElement stats, LiveScoreData result)
+    private static void ParseSpectatorPlayerStats(JsonElement stats, LiveScoreData result, bool includeFullScorecard)
     {
         var battingIsHome = result.BattingTeam == result.TeamA;
         var battingSide = battingIsHome ? "HOME" : "AWAY";
@@ -387,18 +441,22 @@ subscription($id: ID!) {
             battingStats.TryGetProperty("players", out var battingPlayers))
         {
             var notOut = new List<(string Name, int Runs, int Balls, int DisplayOrder)>();
+            var battedByName = new Dictionary<string, BattingCardEntry>(StringComparer.OrdinalIgnoreCase);
+            var knownBatters = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var player in battingPlayers.EnumerateArray())
             {
                 var name = GetPlayerName(player);
                 if (string.IsNullOrWhiteSpace(name)) continue;
+                knownBatters.Add(name);
                 if (!player.TryGetProperty("periodStatistics", out var ps)) continue;
 
                 foreach (var period in ps.EnumerateArray())
                 {
                     var side = GetStr(period, "side");
                     var status = GetStr(period, "status");
-                    if (side == battingSide && status == "NOT_OUT")
+                    if (string.Equals(side, battingSide, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(status, "NOT_OUT", StringComparison.OrdinalIgnoreCase))
                     {
                         int runs = 0, balls = 0, displayOrder = 0;
                         if (period.TryGetProperty("displayOrder", out var dov) && dov.ValueKind == JsonValueKind.Number)
@@ -409,11 +467,39 @@ subscription($id: ID!) {
                             {
                                 var tv = GetNestedStr(s, "type", "value");
                                 var cnt = s.TryGetProperty("count", out var cv) ? (int)cv.GetDouble() : 0;
-                                if (tv == "TOTAL_RUNS") runs = cnt;
-                                else if (tv == "BALLS_FACED") balls = cnt;
+                                if (tv == "TOTAL_RUNS" || tv == "CURRENT_RUNS") runs = cnt;
+                                else if (tv == "BALLS_FACED" || tv == "CURRENT_BALLS_FACED") balls = cnt;
                             }
                         }
                         notOut.Add((name, runs, balls, displayOrder));
+                    }
+
+                    if (includeFullScorecard && string.Equals(side, battingSide, StringComparison.OrdinalIgnoreCase))
+                    {
+                        int runs = 0, balls = 0;
+                        bool hasBattingStats = false;
+
+                        if (period.TryGetProperty("statistics", out var pStats))
+                        {
+                            foreach (var s in pStats.EnumerateArray())
+                            {
+                                var tv = GetNestedStr(s, "type", "value");
+                                var cnt = s.TryGetProperty("count", out var cv) ? (int)cv.GetDouble() : 0;
+                                if (tv == "TOTAL_RUNS" || tv == "CURRENT_RUNS") { runs = cnt; hasBattingStats = true; }
+                                else if (tv == "BALLS_FACED" || tv == "CURRENT_BALLS_FACED") { balls = cnt; hasBattingStats = true; }
+                            }
+                        }
+
+                        if (hasBattingStats)
+                        {
+                            battedByName[name] = new BattingCardEntry
+                            {
+                                Name = name,
+                                Runs = runs,
+                                Balls = balls,
+                                Status = status
+                            };
+                        }
                     }
                 }
             }
@@ -431,6 +517,20 @@ subscription($id: ID!) {
                 result.BatsmanNonStrike = notOut[^2].Name;
                 result.BatsmanNonStrikeRuns = $"{notOut[^2].Runs}({notOut[^2].Balls})";
             }
+
+            if (includeFullScorecard)
+            {
+                result.BattersBatted = battedByName.Values
+                    .OrderByDescending(x => x.Runs)
+                    .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                result.BattersYetToBat = knownBatters
+                    .Where(name => !battedByName.ContainsKey(name))
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .Select(name => new BattingCardEntry { Name = name, Status = "YET_TO_BAT" })
+                    .ToList();
+            }
         }
 
         // Bowler
@@ -441,6 +541,7 @@ subscription($id: ID!) {
             int cbRuns = 0, cbWickets = 0;
             double cbOvers = 0;
             bool foundCurrentBowler = false;
+            var bowlersByName = new Dictionary<string, BowlingCardEntry>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var player in bowlingPlayers.EnumerateArray())
             {
@@ -451,7 +552,7 @@ subscription($id: ID!) {
                 foreach (var period in ps.EnumerateArray())
                 {
                     var side = GetStr(period, "side");
-                    if (side != battingSide) continue;
+                    if (!string.Equals(side, battingSide, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!period.TryGetProperty("statistics", out var pStats)) continue;
 
                     double overs = 0;
@@ -465,6 +566,7 @@ subscription($id: ID!) {
                         switch (tv)
                         {
                             case "OVERS": overs = cnt; hasBowling = true; break;
+                            case "OVERS_BOWLED": overs = cnt; hasBowling = true; break;
                             case "RUNS": runs = (int)cnt; break;
                             case "WICKETS": wickets = (int)cnt; break;
                             case "CURRENT_BALLS": currentBalls = (int)cnt; break;
@@ -489,6 +591,18 @@ subscription($id: ID!) {
                             cbWickets = wickets;
                             cbOvers = overs;
                         }
+
+                        if (includeFullScorecard)
+                        {
+                            bowlersByName[name] = new BowlingCardEntry
+                            {
+                                Name = name,
+                                Overs = overs.ToString("0.#"),
+                                Maidens = 0,
+                                Runs = runs,
+                                Wickets = wickets
+                            };
+                        }
                     }
                 }
             }
@@ -498,10 +612,19 @@ subscription($id: ID!) {
                 result.CurrentBowler = currentBowlerName;
                 result.CurrentBowlerFigures = $"{cbWickets}/{cbRuns} ({cbOvers:0.#} ov)";
             }
+
+            if (includeFullScorecard)
+            {
+                result.BowlersBowled = bowlersByName.Values
+                    .OrderByDescending(x => x.Wickets)
+                    .ThenBy(x => x.Runs)
+                    .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
         }
     }
 
-    private record InningsInfo(int Runs, int Wickets, string Overs, string? ClosureStatus);
+    private record InningsInfo(string PeriodValue, int Runs, int Wickets, string Overs, string? ClosureStatus);
 
     private static List<InningsInfo> ExtractInnings(JsonElement resultEl, string teamKey)
     {
@@ -511,6 +634,13 @@ subscription($id: ID!) {
 
         foreach (var period in periods.EnumerateArray())
         {
+            // Spectator often emits both BATTING and BOWLING role entries for the same period.
+            // Only BATTING entries contain innings totals we want for scorecard lines.
+            var role = GetStr(period, "role");
+            if (!string.IsNullOrWhiteSpace(role) && !role.Equals("BATTING", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var periodValue = GetNestedStr(period, "period", "value");
             var closure = period.TryGetProperty("closureStatus", out var cs) && cs.ValueKind == JsonValueKind.String
                 ? cs.GetString() : null;
             int runs = 0, wickets = 0;
@@ -530,9 +660,25 @@ subscription($id: ID!) {
                     }
                 }
             }
-            list.Add(new InningsInfo(runs, wickets, overs, closure));
+            // Keep innings rows that have meaningful totals, or active rows (open closure status).
+            if (runs > 0 || wickets > 0 || overs != "0.0" || string.IsNullOrEmpty(closure))
+            {
+                list.Add(new InningsInfo(periodValue, runs, wickets, overs, closure));
+            }
         }
         return list;
+    }
+
+    private static string ToInningsLabel(string periodValue)
+    {
+        return periodValue switch
+        {
+            "FIRST_INNINGS" => "1st Innings",
+            "SECOND_INNINGS" => "2nd Innings",
+            "THIRD_INNINGS" => "3rd Innings",
+            "FOURTH_INNINGS" => "4th Innings",
+            _ => periodValue
+        };
     }
 
     private static string FormatInnings(List<InningsInfo> innings)

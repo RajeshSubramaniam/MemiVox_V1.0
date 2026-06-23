@@ -14,6 +14,7 @@ public class ScoreExtractionService : IScoreExtractionService
     // Cache scraped scores for 7 seconds — overlay polls every 8s so each poll gets fresh data
     private static readonly ConcurrentDictionary<string, (LiveScoreData Data, DateTime CachedAt)> _cache = new();
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(7);
+    private static readonly TimeSpan StaleGraceDuration = TimeSpan.FromMinutes(2);
 
     public static int CacheCount => _cache.Count;
 
@@ -86,7 +87,7 @@ public class ScoreExtractionService : IScoreExtractionService
         LiveScoreData? result = null;
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            result = await scraper.ExtractAsync(matchUrl, _httpClient);
+            result = await scraper.ExtractAsync(matchUrl, _httpClient, includeFullScorecard: false);
             result.SetupId = setupId;
 
             if (result.IsValid || string.IsNullOrEmpty(result.ErrorMessage))
@@ -104,18 +105,50 @@ public class ScoreExtractionService : IScoreExtractionService
         {
             if (_cache.TryGetValue(cacheKey, out var stale) && stale.Data.IsValid)
             {
-                _logger.LogWarning("Serving stale cached score for SetupId {SetupId} due to extraction failure.", setupId);
-                return stale.Data;
+                var staleAge = DateTime.UtcNow - stale.CachedAt;
+                if (staleAge <= StaleGraceDuration)
+                {
+                    _logger.LogWarning("Serving stale cached score for SetupId {SetupId} due to extraction failure. Age={AgeSeconds}s", setupId, (int)staleAge.TotalSeconds);
+
+                    return CloneAsStaleFallback(stale.Data, staleAge);
+                }
+
+                _logger.LogWarning("Stale cache for SetupId {SetupId} is older than grace period ({AgeSeconds}s). Returning extraction error.", setupId, (int)staleAge.TotalSeconds);
             }
         }
 
         // Cache successful result
         if (result != null && (result.IsValid || string.IsNullOrEmpty(result.ErrorMessage)))
         {
+            result.IsStaleFallback = false;
+            result.StaleAgeSeconds = 0;
+            result.WarningMessage = string.Empty;
             _cache[cacheKey] = (result, DateTime.UtcNow);
         }
 
         return result!;
+    }
+
+    public async Task<LiveScoreData> ExtractFullScorecardAsync(string setupId, string matchUrl, string providerType)
+    {
+        var scraper = ResolveScraper(matchUrl, providerType);
+        if (scraper == null)
+        {
+            return new LiveScoreData
+            {
+                SetupId = setupId,
+                MatchUrl = matchUrl,
+                ProviderType = providerType,
+                ErrorMessage = "No scraper available for this provider.",
+                ScrapedAt = DateTime.UtcNow
+            };
+        }
+
+        _logger.LogInformation("Extracting full scorecard on-demand for SetupId {SetupId} from {Provider}.", setupId, scraper.ProviderName);
+
+        var result = await scraper.ExtractAsync(matchUrl, _httpClient, includeFullScorecard: true);
+        result.SetupId = setupId;
+        return result;
     }
 
     private IProviderScraper? ResolveScraper(string matchUrl, string providerType)
@@ -150,5 +183,76 @@ public class ScoreExtractionService : IScoreExtractionService
             }
         }
         return evicted;
+    }
+
+    private static LiveScoreData CloneAsStaleFallback(LiveScoreData source, TimeSpan staleAge)
+    {
+        return new LiveScoreData
+        {
+            SetupId = source.SetupId,
+            ProviderType = source.ProviderType,
+            MatchUrl = source.MatchUrl,
+            TeamA = source.TeamA,
+            TeamB = source.TeamB,
+            TeamASummary = source.TeamASummary,
+            TeamBSummary = source.TeamBSummary,
+            BattingTeam = source.BattingTeam,
+            Runs = source.Runs,
+            Wickets = source.Wickets,
+            Overs = source.Overs,
+            BatsmanOnStrike = source.BatsmanOnStrike,
+            BatsmanOnStrikeRuns = source.BatsmanOnStrikeRuns,
+            BatsmanNonStrike = source.BatsmanNonStrike,
+            BatsmanNonStrikeRuns = source.BatsmanNonStrikeRuns,
+            CurrentBowler = source.CurrentBowler,
+            CurrentBowlerFigures = source.CurrentBowlerFigures,
+            Target = source.Target,
+            RunRate = source.RunRate,
+            RequiredRunRate = source.RequiredRunRate,
+            CurrentPartnership = source.CurrentPartnership,
+            ProjectedScore = source.ProjectedScore,
+            TossResult = source.TossResult,
+            MatchStatus = source.MatchStatus,
+            MatchSummary = source.MatchSummary,
+            IsFullScorecardAvailable = source.IsFullScorecardAvailable,
+            FullScorecardNote = source.FullScorecardNote,
+            AllInnings = source.AllInnings.Select(x => new InningsScoreLine
+            {
+                TeamName = x.TeamName,
+                InningsLabel = x.InningsLabel,
+                Runs = x.Runs,
+                Wickets = x.Wickets,
+                Overs = x.Overs,
+                ClosureStatus = x.ClosureStatus
+            }).ToList(),
+            BattersBatted = source.BattersBatted.Select(x => new BattingCardEntry
+            {
+                Name = x.Name,
+                Runs = x.Runs,
+                Balls = x.Balls,
+                Status = x.Status
+            }).ToList(),
+            BattersYetToBat = source.BattersYetToBat.Select(x => new BattingCardEntry
+            {
+                Name = x.Name,
+                Runs = x.Runs,
+                Balls = x.Balls,
+                Status = x.Status
+            }).ToList(),
+            BowlersBowled = source.BowlersBowled.Select(x => new BowlingCardEntry
+            {
+                Name = x.Name,
+                Overs = x.Overs,
+                Maidens = x.Maidens,
+                Runs = x.Runs,
+                Wickets = x.Wickets
+            }).ToList(),
+            ScrapedAt = source.ScrapedAt,
+            IsValid = source.IsValid,
+            ErrorMessage = string.Empty,
+            IsStaleFallback = true,
+            StaleAgeSeconds = Math.Max(0, (int)staleAge.TotalSeconds),
+            WarningMessage = "Serving last known score temporarily while provider is unavailable."
+        };
     }
 }

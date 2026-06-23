@@ -129,9 +129,9 @@ public class AdminController : ControllerBase
         if (authError != null) return authError;
 
         if (string.IsNullOrWhiteSpace(buildId))
-            return BadRequest(new { valid = false, message = "buildId is required." });
+            return BadRequest(new { valid = false, reason = "missing", message = "buildId is required." });
 
-        // Probe the _next/data API and verify the response is valid Next.js JSON
+        // Probe the _next/data API and verify if it still returns usable JSON.
         var testUrl = $"https://cricheroes.com/_next/data/{buildId.Trim()}/scorecard/25215069/battle-of-champions-4.0/skill-warriors-vs-max-daredevils/live.json";
         try
         {
@@ -146,19 +146,23 @@ public class AdminController : ControllerBase
             request.Headers.Add("Accept", "application/json");
             request.Headers.Add("x-nextjs-data", "1");
             var response = await httpClient.SendAsync(request);
-
-            if (!response.IsSuccessStatusCode)
-                return Ok(new { valid = false, status = (int)response.StatusCode });
-
-            // Valid buildId returns JSON with pageProps (either match data or a redirect instruction).
-            // Stale buildId returns HTML (404 error page followed by redirect).
             var content = await response.Content.ReadAsStringAsync();
-            var isValid = content.TrimStart().StartsWith("{") && content.Contains("\"pageProps\"");
-            return Ok(new { valid = isValid, status = (int)response.StatusCode });
+
+            if (response.IsSuccessStatusCode && content.TrimStart().StartsWith("{") && content.Contains("\"pageProps\""))
+                return Ok(new { valid = true, status = (int)response.StatusCode, reason = "active" });
+
+            var lower = content.ToLowerInvariant();
+            if (lower.Contains("__cf_chl") || lower.Contains("just a moment") || lower.Contains("cf-challenge"))
+                return Ok(new { valid = false, status = (int)response.StatusCode, reason = "cloudflare_blocked" });
+
+            if (lower.Contains("next.cricheroes.com/_next/static/chunks/") || lower.Contains("self.__next_f") || lower.Contains("bailout_to_client_side_rendering"))
+                return Ok(new { valid = false, status = (int)response.StatusCode, reason = "app_shell_changed" });
+
+            return Ok(new { valid = false, status = (int)response.StatusCode, reason = "stale_or_invalid" });
         }
         catch
         {
-            return Ok(new { valid = false, status = 0 });
+            return Ok(new { valid = false, status = 0, reason = "network_error" });
         }
     }
 
@@ -174,7 +178,122 @@ public class AdminController : ControllerBase
         CricHeroesScraper.SetBuildId(request.BuildId.Trim());
         return Ok(new { buildId = CricHeroesScraper.GetCachedBuildId() });
     }
+
+    [HttpGet("cricheroes-session")]
+    public IActionResult GetCricHeroesSessionCookie()
+    {
+        var authError = VerifyAdminAuth();
+        if (authError != null) return authError;
+
+        var cookie = CricHeroesScraper.GetSessionCookieHeader();
+        var preview = string.IsNullOrWhiteSpace(cookie)
+            ? null
+            : (cookie.Length <= 24 ? cookie : cookie[..24] + "...");
+
+        return Ok(new
+        {
+            configured = !string.IsNullOrWhiteSpace(cookie),
+            preview
+        });
+    }
+
+    [HttpPost("cricheroes-session")]
+    public IActionResult SetCricHeroesSessionCookie([FromBody] CricHeroesSessionRequest request)
+    {
+        var authError = VerifyAdminAuth();
+        if (authError != null) return authError;
+
+        if (string.IsNullOrWhiteSpace(request.CookieHeader))
+            return BadRequest(new { message = "cookieHeader is required." });
+
+        CricHeroesScraper.SetSessionCookieHeader(request.CookieHeader);
+        return Ok(new { configured = true });
+    }
+
+    [HttpDelete("cricheroes-session")]
+    public IActionResult ClearCricHeroesSessionCookie()
+    {
+        var authError = VerifyAdminAuth();
+        if (authError != null) return authError;
+
+        CricHeroesScraper.ClearSessionCookieHeader();
+        return Ok(new { configured = false });
+    }
+
+    [HttpGet("cricheroes-session/test")]
+    public async Task<IActionResult> TestCricHeroesSessionCookie([FromQuery] int matchId = 25166753)
+    {
+        var authError = VerifyAdminAuth();
+        if (authError != null) return authError;
+
+        var cookie = CricHeroesScraper.GetSessionCookieHeader();
+        var hasCookie = !string.IsNullOrWhiteSpace(cookie);
+
+        try
+        {
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+            var url = $"https://api.cricheroes.in/api/v1/scorecard/get-mini-scorecard/{matchId}";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("Accept", "application/json, text/plain, */*");
+            request.Headers.Add("api-key", "cr!CkH3r0s");
+            request.Headers.Add("device-type", "Chrome: 149.0.0.0");
+            request.Headers.Add("origin", "https://cricheroes.com");
+            request.Headers.Add("referer", "https://cricheroes.com/");
+            request.Headers.Add("udid", "33f1796b2918055566db36fd2aa681a4");
+            request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36");
+
+            if (hasCookie)
+            {
+                request.Headers.TryAddWithoutValidation("Cookie", cookie);
+            }
+
+            var response = await httpClient.SendAsync(request);
+            var content = await response.Content.ReadAsStringAsync();
+            var lower = content.ToLowerInvariant();
+
+            if (response.IsSuccessStatusCode && lower.Contains("\"status\":true") && lower.Contains("\"data\""))
+            {
+                return Ok(new
+                {
+                    valid = true,
+                    status = (int)response.StatusCode,
+                    reason = "active",
+                    hasCookie
+                });
+            }
+
+            if (lower.Contains("__cf_chl") || lower.Contains("just a moment") || lower.Contains("cf-challenge"))
+            {
+                return Ok(new
+                {
+                    valid = false,
+                    status = (int)response.StatusCode,
+                    reason = "cloudflare_blocked",
+                    hasCookie
+                });
+            }
+
+            return Ok(new
+            {
+                valid = false,
+                status = (int)response.StatusCode,
+                reason = "api_unavailable",
+                hasCookie
+            });
+        }
+        catch
+        {
+            return Ok(new
+            {
+                valid = false,
+                status = 0,
+                reason = "network_error",
+                hasCookie
+            });
+        }
+    }
 }
 
 public record BuildIdRequest(string BuildId);
+public record CricHeroesSessionRequest(string CookieHeader);
 public record AdminPasswordRequest(string Password);
